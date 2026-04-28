@@ -1,0 +1,59 @@
+{
+  "nodes": [
+    {
+      "id": "combat_01",
+      "category": "combat",
+      "title": "Ambush!",
+      "description": "Something lunges from the shadows. Steel or spell — choose fast.",
+      "choices": ["Fight", "Flee"],
+      "outcomes": {
+        "Fight": {"success": "You cut it down. Loot recovered.", "failure": "It lands a blow. Strike taken."},
+        "Flee": {"success": "You slip away clean.", "failure": "It clips you as you run. Strike taken."}
+      }
+    },
+    {
+      "id": "treasure_01",
+      "category": "treasure",
+      "title": "Dusty Chest",
+      "description": "A battered chest sits against the wall. Could be riches. Could be a trap.",
+      "choices": ["Open It", "Leave It"],
+      "outcomes": {
+        "Open It": {"success": "Gold and loot spill out.", "failure": "Trapped. Strike taken."},
+        "Leave It": {"success": "Smart. You move on unharmed.", "failure": ""}
+      }
+    },
+    {
+      "id": "merchant_01",
+      "category": "merchant",
+      "title": "Wandering Peddler",
+      "description": "A hooded figure offers wares from a battered pack. Prices seem fair. Maybe.",
+      "choices": ["Browse", "Move On"],
+      "outcomes": {
+        "Browse": {"success": "You find something useful.", "failure": "Nothing worth buying."},
+        "Move On": {"success": "You conserve your coin.", "failure": ""}
+      }
+    },
+    {
+      "id": "trap_01",
+      "category": "trap",
+      "title": "Pressure Plate",
+      "description": "Your foot hovers over a suspicious stone. One wrong step and this gets ugly.",
+      "choices": ["Step Carefully", "Jump Over"],
+      "outcomes": {
+        "Step Carefully": {"success": "You disarm it with a steady hand.", "failure": "Click. Strike taken."},
+        "Jump Over": {"success": "Cleared it.", "failure": "Landed wrong. Strike taken."}
+      }
+    },
+    {
+      "id": "rest_01",
+      "category": "rest",
+      "title": "Hidden Alcove",
+      "description": "A quiet nook, hidden from the dungeon's main path. You could rest here.",
+      "choices": ["Rest", "Press On"],
+      "outcomes": {
+        "Rest": {"success": "You recover. One strike cleared.", "failure": ""},
+        "Press On": {"success": "No time wasted.", "failure": ""}
+      }
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "items": [
+    {"id": "iron_sword", "name": "Iron Sword", "rarity": "common", "sell_value": 10, "type": "weapon"},
+    {"id": "leather_boots", "name": "Leather Boots", "rarity": "common", "sell_value": 8, "type": "armor"},
+    {"id": "health_potion", "name": "Health Potion", "rarity": "common", "sell_value": 12, "type": "consumable"},
+    {"id": "silver_dagger", "name": "Silver Dagger", "rarity": "uncommon", "sell_value": 25, "type": "weapon"},
+    {"id": "enchanted_cloak", "name": "Enchanted Cloak", "rarity": "uncommon", "sell_value": 30, "type": "armor"},
+    {"id": "mana_crystal", "name": "Mana Crystal", "rarity": "uncommon", "sell_value": 35, "type": "material"},
+    {"id": "golden_chalice", "name": "Golden Chalice", "rarity": "rare", "sell_value": 75, "type": "treasure"},
+    {"id": "dragons_tooth", "name": "Dragon's Tooth", "rarity": "rare", "sell_value": 90, "type": "material"},
+    {"id": "shadowweave_armor", "name": "Shadowweave Armor", "rarity": "epic", "sell_value": 200, "type": "armor"},
+    {"id": "arcane_staff", "name": "Arcane Staff", "rarity": "epic", "sell_value": 250, "type": "weapon"}
+  ]
+}

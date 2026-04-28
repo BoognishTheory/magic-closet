@@ -1,0 +1,10 @@
+{
+  "enemies": [
+    {"id": "goblin", "name": "Goblin", "tier": 1, "difficulty": 1, "strike_on_loss": 1, "loot_table": "tier1"},
+    {"id": "skeleton", "name": "Skeleton", "tier": 1, "difficulty": 2, "strike_on_loss": 1, "loot_table": "tier1"},
+    {"id": "orc_warrior", "name": "Orc Warrior", "tier": 2, "difficulty": 3, "strike_on_loss": 1, "loot_table": "tier2"},
+    {"id": "dark_mage", "name": "Dark Mage", "tier": 2, "difficulty": 4, "strike_on_loss": 2, "loot_table": "tier2"},
+    {"id": "stone_golem", "name": "Stone Golem", "tier": 3, "difficulty": 6, "strike_on_loss": 2, "loot_table": "tier3"},
+    {"id": "dragon_whelp", "name": "Dragon Whelp", "tier": 3, "difficulty": 8, "strike_on_loss": 2, "loot_table": "tier3"}
+  ]
+}

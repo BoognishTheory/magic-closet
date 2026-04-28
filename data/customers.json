@@ -1,0 +1,10 @@
+{
+  "customers": [
+    {"id": "bargain_hunter", "name": "Bargain Hunter", "tier": "common", "patience": 3, "price_sensitivity": "high"},
+    {"id": "casual_shopper", "name": "Casual Shopper", "tier": "common", "patience": 4, "price_sensitivity": "medium"},
+    {"id": "collector", "name": "The Collector", "tier": "uncommon", "patience": 5, "price_sensitivity": "low"},
+    {"id": "merchant", "name": "Traveling Merchant", "tier": "uncommon", "patience": 3, "price_sensitivity": "medium"},
+    {"id": "noble", "name": "Minor Noble", "tier": "rare", "patience": 6, "price_sensitivity": "low"},
+    {"id": "arcane_scholar", "name": "Arcane Scholar", "tier": "epic", "patience": 7, "price_sensitivity": "very_low"}
+  ]
+}

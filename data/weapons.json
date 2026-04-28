@@ -1,0 +1,7 @@
+{
+  "weapons": [
+    {"id": "iron_sword", "name": "Iron Sword", "damage_bonus": 1, "strike_reduction": 0, "rarity": "common"},
+    {"id": "silver_dagger", "name": "Silver Dagger", "damage_bonus": 2, "strike_reduction": 1, "rarity": "uncommon"},
+    {"id": "arcane_staff", "name": "Arcane Staff", "damage_bonus": 3, "strike_reduction": 1, "rarity": "epic"}
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "spells": [
+    {"id": "fireball", "name": "Fireball", "effect": "combat_bonus", "modifier": 2, "rarity": "common"},
+    {"id": "shadow_step", "name": "Shadow Step", "effect": "escape_bonus", "modifier": 2, "rarity": "uncommon"},
+    {"id": "arcane_shield", "name": "Arcane Shield", "effect": "strike_reduction", "modifier": 1, "rarity": "uncommon"},
+    {"id": "death_curse", "name": "Death Curse", "effect": "combat_bonus", "modifier": 4, "rarity": "rare"}
+  ]
+}
