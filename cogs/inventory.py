@@ -30,7 +30,7 @@ from game.bank import (
 # Config — adjust to match your bot's setup
 # ---------------------------------------------------------------------------
 
-PATREON_ROLE_NAME = "Patreon"   # Role name in your Discord server
+PATREON_ROLE_NAME = "Business Owner"   # Role name in your Discord server
 EMBED_COLOR       = 0x5B2D8E    # Purple
 DB_PATH           = "magic_closet.db"  # Path to your SQLite DB
 
