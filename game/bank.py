@@ -1,11 +1,14 @@
 """
 game/bank.py
 Data layer for /bank and /inventory commands.
-All functions read from BankItem table. No writes happen here.
+Reads from BankItem table (SQLAlchemy) and items.json for item metadata.
+All functions are read-only.
 """
 
-import sqlite3
-from typing import Optional
+import json
+import os
+from db.database import get_session
+from db.models import Player, BankItem, Quest
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -18,6 +21,22 @@ RARITY_ORDER = {
     "Rare":      3,
     "Uncommon":  4,
     "Common":    5,
+}
+
+# Normalize rarity strings from items.json to display labels
+RARITY_NORMALIZE = {
+    "common":    "Common",
+    "uncommon":  "Uncommon",
+    "rare":      "Rare",
+    "epic":      "Very Rare",
+    "legendary": "Legendary",
+    "wondrous":  "Wondrous",
+    "Common":    "Common",
+    "Uncommon":  "Uncommon",
+    "Rare":      "Rare",
+    "Very Rare": "Very Rare",
+    "Legendary": "Legendary",
+    "Wondrous":  "Wondrous",
 }
 
 RARITY_EMOJI = {
@@ -47,168 +66,187 @@ CATEGORY_EMOJI = {
     "Practical Magic":  "⚔️",
 }
 
+# Placeholder: map item type → bank category until full catalog is written
+TYPE_TO_CATEGORY = {
+    "weapon":      "Practical Magic",
+    "armor":       "Practical Magic",
+    "consumable":  "Remedies",
+    "material":    "Magical Supplies",
+    "treasure":    "Wonder Items",
+    "prank":       "Pranks",
+    "convenience": "Conveniences",
+    "remedy":      "Remedies",
+}
+
 PAGE_SIZE = 10
 
 
 # ---------------------------------------------------------------------------
-# DB helper
+# Items catalog loader
 # ---------------------------------------------------------------------------
 
-def _get_db(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    return conn
+_ITEMS_CACHE: dict = {}
 
 
-# ---------------------------------------------------------------------------
-# category_summary(player_id) → dict
-# Returns item count per category for the Root view button labels.
-# Excludes items currently on the floor (on_floor=TRUE).
-# ---------------------------------------------------------------------------
+def _load_items() -> dict:
+    """Load items.json into a dict keyed by item id. Cached after first load."""
+    global _ITEMS_CACHE
+    if _ITEMS_CACHE:
+        return _ITEMS_CACHE
 
-def category_summary(player_id: int, db_path: str) -> dict:
-    """
-    Returns:
-        {
-            "Pranks": 3,
-            "Remedies": 0,
-            "Magical Supplies": 8,
-            ...
+    candidates = [
+        "items.json",
+        "data/items.json",
+        "game/items.json",
+        os.path.join(os.path.dirname(__file__), "items.json"),
+        os.path.join(os.path.dirname(__file__), "../items.json"),
+        os.path.join(os.path.dirname(__file__), "../data/items.json"),
+    ]
+
+    for path in candidates:
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                data = json.load(f)
+            _ITEMS_CACHE = {item["id"]: item for item in data.get("items", [])}
+            return _ITEMS_CACHE
+
+    return {}
+
+
+def get_item_meta(item_id: str) -> dict:
+    """Returns item metadata from items.json. Falls back gracefully."""
+    items = _load_items()
+    item  = items.get(item_id)
+    if item:
+        return {
+            "name":       item.get("name", item_id),
+            "category":   TYPE_TO_CATEGORY.get(item.get("type", ""), "Wonder Items"),
+            "sell_value": item.get("sell_value", 0),
+            "rarity":     RARITY_NORMALIZE.get(item.get("rarity", "common"), "Common"),
         }
-    """
-    conn = _get_db(db_path)
+    return {
+        "name":       item_id,
+        "category":   "Wonder Items",
+        "sell_value": 0,
+        "rarity":     "Common",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Player lookup
+# ---------------------------------------------------------------------------
+
+def get_player_by_discord_id(discord_id: int):
+    """Returns Player ORM object or None. discord_id stored as Text."""
+    session = get_session()
     try:
-        rows = conn.execute(
-            """
-            SELECT i.category, COUNT(*) as cnt
-            FROM bankitem bi
-            JOIN item i ON bi.item_id = i.id
-            WHERE bi.player_id = ? AND bi.on_floor = FALSE
-            GROUP BY i.category
-            """,
-            (player_id,),
-        ).fetchall()
+        return session.query(Player).filter(
+            Player.discord_id == str(discord_id)
+        ).first()
     finally:
-        conn.close()
+        session.close()
+
+
+# ---------------------------------------------------------------------------
+# category_summary → dict
+# ---------------------------------------------------------------------------
+
+def category_summary(player_id: int) -> dict:
+    """
+    Returns item count per bank category for Root view button labels.
+    player_id is Player.id (integer PK). Excludes floor items.
+    """
+    session = get_session()
+    try:
+        rows = session.query(BankItem).filter(
+            BankItem.player_id == player_id,
+            BankItem.on_floor  == False,
+        ).all()
+    finally:
+        session.close()
 
     summary = {cat: 0 for cat in CATEGORIES}
     for row in rows:
-        if row["category"] in summary:
-            summary[row["category"]] = row["cnt"]
+        meta = get_item_meta(row.item_id)
+        cat  = meta["category"]
+        if cat in summary:
+            summary[cat] += 1
     return summary
 
 
 # ---------------------------------------------------------------------------
-# bank_browse_category(player_id, category, sort, page) → dict
-# Returns paginated item list for the Branch view.
-# Excludes floor items.
+# bank_browse_category → dict
 # ---------------------------------------------------------------------------
 
 def bank_browse_category(
     player_id: int,
-    category: str,
-    sort: str,          # "rarity" | "value"
-    page: int,
-    db_path: str,
+    category:  str,
+    sort:      str,
+    page:      int,
 ) -> dict:
-    """
-    Returns:
-        {
-            "items": [
-                {"name": str, "rarity": str, "sell_value": int},
-                ...
-            ],
-            "total":       int,   # total items in this category
-            "page":        int,   # current page (1-indexed)
-            "total_pages": int,
-            "has_wondrous": bool,
-        }
-    """
-    conn = _get_db(db_path)
+    session = get_session()
     try:
-        rows = conn.execute(
-            """
-            SELECT i.name, i.rarity, i.sell_value
-            FROM bankitem bi
-            JOIN item i ON bi.item_id = i.id
-            WHERE bi.player_id = ? AND i.category = ? AND bi.on_floor = FALSE
-            """,
-            (player_id, category),
-        ).fetchall()
+        rows = session.query(BankItem).filter(
+            BankItem.player_id == player_id,
+            BankItem.on_floor  == False,
+        ).all()
     finally:
-        conn.close()
+        session.close()
 
-    items = [dict(r) for r in rows]
+    items = []
+    for row in rows:
+        meta = get_item_meta(row.item_id)
+        if meta["category"] != category:
+            continue
+        rarity = RARITY_NORMALIZE.get(row.rarity, meta["rarity"])
+        name   = meta["name"]
+        if len(name) > 40:
+            name = name[:37] + "..."
+        items.append({
+            "name":       name,
+            "rarity":     rarity,
+            "sell_value": meta["sell_value"],
+        })
 
-    # Sort
     if sort == "rarity":
         items.sort(key=lambda x: RARITY_ORDER.get(x["rarity"], 99))
     elif sort == "value":
         items.sort(key=lambda x: x["sell_value"], reverse=True)
 
-    total = len(items)
+    total       = len(items)
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-    page = max(1, min(page, total_pages))
-
-    start = (page - 1) * PAGE_SIZE
-    page_items = items[start : start + PAGE_SIZE]
-
-    has_wondrous = any(i["rarity"] == "Wondrous" for i in items)
-
-    # Truncate long names
-    for item in page_items:
-        if len(item["name"]) > 40:
-            item["name"] = item["name"][:37] + "..."
+    page        = max(1, min(page, total_pages))
+    start       = (page - 1) * PAGE_SIZE
+    page_items  = items[start: start + PAGE_SIZE]
 
     return {
-        "items":       page_items,
-        "total":       total,
-        "page":        page,
-        "total_pages": total_pages,
-        "has_wondrous": has_wondrous,
+        "items":        page_items,
+        "total":        total,
+        "page":         page,
+        "total_pages":  total_pages,
+        "has_wondrous": any(i["rarity"] == "Wondrous" for i in items),
     }
 
 
 # ---------------------------------------------------------------------------
-# bank_summary(player_id) → dict
-# Returns total count and per-rarity breakdown for /inventory Bank section.
-# Excludes floor items.
+# bank_summary → dict
 # ---------------------------------------------------------------------------
 
-def bank_summary(player_id: int, db_path: str) -> dict:
-    """
-    Returns:
-        {
-            "total": 12,
-            "by_rarity": {
-                "Common":    8,
-                "Uncommon":  3,
-                "Rare":      1,
-                "Very Rare": 0,
-                "Legendary": 0,
-                "Wondrous":  0,
-            }
-        }
-    """
-    conn = _get_db(db_path)
+def bank_summary(player_id: int) -> dict:
+    session = get_session()
     try:
-        rows = conn.execute(
-            """
-            SELECT i.rarity, COUNT(*) as cnt
-            FROM bankitem bi
-            JOIN item i ON bi.item_id = i.id
-            WHERE bi.player_id = ? AND bi.on_floor = FALSE
-            GROUP BY i.rarity
-            """,
-            (player_id,),
-        ).fetchall()
+        rows = session.query(BankItem).filter(
+            BankItem.player_id == player_id,
+            BankItem.on_floor  == False,
+        ).all()
     finally:
-        conn.close()
+        session.close()
 
     by_rarity = {r: 0 for r in RARITY_EMOJI}
     for row in rows:
-        if row["rarity"] in by_rarity:
-            by_rarity[row["rarity"]] = row["cnt"]
+        rarity = RARITY_NORMALIZE.get(row.rarity, "Common")
+        if rarity in by_rarity:
+            by_rarity[rarity] += 1
 
     return {
         "total":     sum(by_rarity.values()),
@@ -217,81 +255,57 @@ def bank_summary(player_id: int, db_path: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# floor_items(player_id) → list
-# Returns items currently on the shop floor (on_floor=TRUE).
+# floor_items → list
 # ---------------------------------------------------------------------------
 
-def floor_items(player_id: int, db_path: str) -> list:
-    """
-    Returns:
-        [
-            {"name": str, "rarity": str},
-            ...
-        ]
-    """
-    conn = _get_db(db_path)
+def floor_items(player_id: int) -> list:
+    session = get_session()
     try:
-        rows = conn.execute(
-            """
-            SELECT i.name, i.rarity
-            FROM bankitem bi
-            JOIN item i ON bi.item_id = i.id
-            WHERE bi.player_id = ? AND bi.on_floor = TRUE
-            ORDER BY i.name
-            """,
-            (player_id,),
-        ).fetchall()
+        rows = session.query(BankItem).filter(
+            BankItem.player_id == player_id,
+            BankItem.on_floor  == True,
+        ).all()
     finally:
-        conn.close()
+        session.close()
 
-    return [dict(r) for r in rows]
+    result = []
+    for row in rows:
+        meta   = get_item_meta(row.item_id)
+        rarity = RARITY_NORMALIZE.get(row.rarity, meta["rarity"])
+        result.append({"name": meta["name"], "rarity": rarity})
+    return result
 
 
 # ---------------------------------------------------------------------------
-# has_wondrous(player_id, category) → bool
-# Used by branch view to decide whether to show the Wondrous flavor line.
+# has_wondrous → bool
 # ---------------------------------------------------------------------------
 
-def has_wondrous(player_id: int, category: str, db_path: str) -> bool:
-    conn = _get_db(db_path)
+def has_wondrous(player_id: int, category: str) -> bool:
+    session = get_session()
     try:
-        row = conn.execute(
-            """
-            SELECT 1
-            FROM bankitem bi
-            JOIN item i ON bi.item_id = i.id
-            WHERE bi.player_id = ? AND i.category = ? AND i.rarity = 'Wondrous'
-              AND bi.on_floor = FALSE
-            LIMIT 1
-            """,
-            (player_id, category),
-        ).fetchone()
+        rows = session.query(BankItem).filter(
+            BankItem.player_id == player_id,
+            BankItem.on_floor  == False,
+            BankItem.rarity.in_(["wondrous", "Wondrous"]),
+        ).all()
     finally:
-        conn.close()
+        session.close()
 
-    return row is not None
+    return any(get_item_meta(r.item_id)["category"] == category for r in rows)
 
 
 # ---------------------------------------------------------------------------
-# active_quests_count(player_id) → int
-# Returns number of active quests. Returns 0 if quest table doesn't exist yet.
+# active_quests_count → int
 # ---------------------------------------------------------------------------
 
-def active_quests_count(player_id: int, db_path: str) -> int:
-    conn = _get_db(db_path)
+def active_quests_count(player_id: int) -> int:
+    session = get_session()
     try:
-        # Quest system is post-VS — guard against table not existing
-        row = conn.execute(
-            """
-            SELECT COUNT(*) as cnt
-            FROM quest
-            WHERE player_id = ? AND status = 'active'
-            """,
-            (player_id,),
-        ).fetchone()
-        return row["cnt"] if row else 0
-    except sqlite3.OperationalError:
-        # Quest table doesn't exist yet — return 0 silently
+        return session.query(Quest).filter(
+            Quest.player_id == player_id,
+            Quest.status    == "active",
+        ).count()
+    except Exception:
         return 0
     finally:
-        conn.close()
+        session.close()
