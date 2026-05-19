@@ -20,7 +20,8 @@ EXTENSIONS = [
     "cogs.explore",
     "cogs.quests",
     "cogs.leaderboard",
-    "cogs.hotmarket"
+    "cogs.hotmarket",
+    "cogs.inventory"
 ]
 
 @bot.event
