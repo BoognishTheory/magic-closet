@@ -29,7 +29,7 @@ from game.bank import (
 # Config — update PATREON_ROLE_NAME to match your server's exact role name
 # ---------------------------------------------------------------------------
 
-PATREON_ROLE_NAME = "Patreon"
+PATREON_ROLE_NAME = "Business Owner"
 EMBED_COLOR       = 0x5B2D8E
 
 
