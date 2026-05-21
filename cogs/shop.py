@@ -1,3 +1,10 @@
+"""
+cogs/shop.py
+FT-01: Customer pool locked on first /openshop call per cycle.
+Re-invoking /openshop within the same cycle returns the same customers.
+Pool cleared by start_cycle() in cycle_manager.py when 24hr cycle resets.
+"""
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -17,10 +24,10 @@ with open("data/customers.json", "r") as f:
     CUSTOMERS_DATA = json.load(f)["customers"]
 
 RARITY_MULTIPLIERS = {
-    "common": 1.0,
+    "common":   1.0,
     "uncommon": 1.5,
-    "rare": 2.5,
-    "epic": 4.0
+    "rare":     2.5,
+    "epic":     4.0,
 }
 
 STAGE_LABELS = [
@@ -30,9 +37,52 @@ STAGE_LABELS = [
     "Customer Objection",
     "Counteroffer",
     "Closing Pitch",
-    "Final Decision"
+    "Final Decision",
 ]
 
+
+# ---------------------------------------------------------------------------
+# FT-01 — Customer pool generation and locking
+# ---------------------------------------------------------------------------
+
+def _generate_customer_pool(shelf_items: list) -> list:
+    """
+    Generate a customer for each shelf item and return as a list of dicts.
+    Called once per cycle on first /openshop invocation.
+    """
+    pool = []
+    for item in shelf_items:
+        customer = pick_customer_for_item(item.rarity)
+        pool.append({
+            "item_id":       item.item_id,
+            "customer_name": customer["name"],
+            "customer_data": customer,
+        })
+    return pool
+
+
+def _lock_customer_pool(player, pool: list, session) -> None:
+    """
+    Serialize the customer pool to JSON and save it to the player row.
+    Committed immediately so re-invoke reads the same pool.
+    """
+    player.daily_customers = json.dumps(pool)
+    session.commit()
+
+
+def _load_customer_pool(player) -> list:
+    """
+    Deserialize the locked customer pool from the player row.
+    Returns None if not yet set.
+    """
+    if not player.daily_customers:
+        return None
+    return json.loads(player.daily_customers)
+
+
+# ---------------------------------------------------------------------------
+# Existing helpers — unchanged
+# ---------------------------------------------------------------------------
 
 def pick_customer_for_item(item_rarity: str) -> dict:
     matches = [c for c in CUSTOMERS_DATA if c["tier"] == item_rarity]
@@ -40,13 +90,15 @@ def pick_customer_for_item(item_rarity: str) -> dict:
         matches = CUSTOMERS_DATA
     return random.choice(matches)
 
+
 from cogs.hotmarket import get_hot_market_multiplier
 
+
 def calculate_sale_price(item: dict, score: int) -> int:
-    base = item["sell_value"]
+    base       = item["sell_value"]
     multiplier = RARITY_MULTIPLIERS.get(item["rarity"], 1.0)
-    bonus = 1.0 + (score * 0.10)
-    hot = get_hot_market_multiplier(item["id"])
+    bonus      = 1.0 + (score * 0.10)
+    hot        = get_hot_market_multiplier(item["id"])
     return int(base * multiplier * bonus * hot)
 
 
@@ -98,27 +150,33 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
         f"{customer['name']} weighs their options. Final call?\n\n"
         f"**A)** Press for the close directly\n"
         f"**B)** Give them space to decide\n"
-        f"**C)** Offer a payment plan"
+        f"**C)** Offer a payment plan",
     ]
     return stages[stage]
 
 
+# ---------------------------------------------------------------------------
+# ShopView — customer passed in from locked pool, not generated on the fly
+# ---------------------------------------------------------------------------
+
 class ShopView(discord.ui.View):
-    def __init__(self, session, player, shelf_items):
+    def __init__(self, session, player, shelf_items, customer_pool: list):
         super().__init__(timeout=120)
-        self.session = session
-        self.player = player
-        self.shelf_items = shelf_items
-        self.current_item_index = 0
-        self.current_stage = 0
-        self.stage_score = 0
-        self.total_coin_earned = 0
-        self.current_customer = pick_customer_for_item(shelf_items[0].rarity)
+        self.session             = session
+        self.player              = player
+        self.shelf_items         = shelf_items
+        self.customer_pool       = customer_pool   # FT-01: locked pool
+        self.current_item_index  = 0
+        self.current_stage       = 0
+        self.stage_score         = 0
+        self.total_coin_earned   = 0
+        # FT-01: use customer from locked pool, not a fresh random pick
+        self.current_customer    = customer_pool[0]["customer_data"]
         self._set_stage_buttons()
 
     def _set_stage_buttons(self):
         self.clear_items()
-        btn1 = discord.ui.Button(label="Option A", style=discord.ButtonStyle.primary, custom_id="choice_a")
+        btn1 = discord.ui.Button(label="Option A", style=discord.ButtonStyle.primary,   custom_id="choice_a")
         btn2 = discord.ui.Button(label="Option B", style=discord.ButtonStyle.secondary, custom_id="choice_b")
         btn3 = discord.ui.Button(label="Option C", style=discord.ButtonStyle.secondary, custom_id="choice_c")
         btn1.callback = self.choice_a
@@ -135,24 +193,23 @@ class ShopView(discord.ui.View):
         self.add_item(btn)
 
     def build_stage_embed(self) -> discord.Embed:
-        item = self.shelf_items[self.current_item_index]
+        item     = self.shelf_items[self.current_item_index]
         item_def = ITEMS_BY_ID.get(item.item_id, {})
-        stage_label = STAGE_LABELS[self.current_stage]
         customer = self.current_customer
 
         embed = discord.Embed(
-            title=f"🛒 The Magic Closet — {stage_label}",
+            title=f"🛒 The Magic Closet — {STAGE_LABELS[self.current_stage]}",
             description=get_stage_description(self.current_stage, item_def, customer),
-            color=0x9b59b6
+            color=0x9b59b6,
         )
-        embed.add_field(name="Item", value=item_def.get("name", "Unknown"), inline=True)
-        embed.add_field(name="Customer", value=customer["name"], inline=True)
-        embed.add_field(name="Stage", value=f"{self.current_stage + 1} / 7", inline=True)
+        embed.add_field(name="Item",     value=item_def.get("name", "Unknown"), inline=True)
+        embed.add_field(name="Customer", value=customer["name"],                inline=True)
+        embed.add_field(name="Stage",    value=f"{self.current_stage + 1} / 7", inline=True)
         embed.set_footer(text="Choose your approach wisely.")
         return embed
 
     async def _handle_choice(self, interaction: discord.Interaction, choice: str):
-        self.stage_score += score_choice(self.current_stage, choice)
+        self.stage_score  += score_choice(self.current_stage, choice)
         self.current_stage += 1
 
         if self.current_stage >= 7:
@@ -162,7 +219,7 @@ class ShopView(discord.ui.View):
             await interaction.response.edit_message(embed=embed, view=self)
 
     async def _resolve_sale(self, interaction: discord.Interaction):
-        item = self.shelf_items[self.current_item_index]
+        item     = self.shelf_items[self.current_item_index]
         item_def = ITEMS_BY_ID.get(item.item_id, {})
         coin_earned = calculate_sale_price(item_def, self.stage_score)
 
@@ -172,17 +229,20 @@ class ShopView(discord.ui.View):
         self.session.commit()
 
         self.current_item_index += 1
-        self.current_stage = 0
-        self.stage_score = 0
+        self.current_stage       = 0
+        self.stage_score         = 0
 
         if self.current_item_index < len(self.shelf_items):
-            self.current_customer = pick_customer_for_item(
-                self.shelf_items[self.current_item_index].rarity
-            )
+            # FT-01: advance to next customer from locked pool
+            self.current_customer = self.customer_pool[self.current_item_index]["customer_data"]
             embed = discord.Embed(
                 title="💰 Sale Complete!",
-                description=f"You earned **{coin_earned} coin** for the {item_def.get('name', 'item')}.\n\nA new customer is already eyeing your wares.",
-                color=0x2ecc71
+                description=(
+                    f"You earned **{coin_earned} coin** for the "
+                    f"{item_def.get('name', 'item')}.\n\n"
+                    f"A new customer is already eyeing your wares."
+                ),
+                color=0x2ecc71,
             )
             embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=False)
             self._set_next_customer_button()
@@ -197,17 +257,17 @@ class ShopView(discord.ui.View):
 
     async def _close_shop(self, interaction: discord.Interaction, last_coin_earned: int):
         self.player.shop_complete = True
-        self.player.last_active = datetime.utcnow()
+        self.player.last_active   = datetime.utcnow()
         self.session.commit()
 
         embed = discord.Embed(
             title="🔒 The Magic Closet — Closed for the Day",
             description="The last customer has left. You flip the sign to closed.",
-            color=0xe74c3c
+            color=0xe74c3c,
         )
-        embed.add_field(name="Last Sale", value=f"{last_coin_earned} coin", inline=True)
+        embed.add_field(name="Last Sale",        value=f"{last_coin_earned} coin",        inline=True)
         embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=False)
-        embed.add_field(name="Current Balance", value=f"{self.player.coin} coin", inline=False)
+        embed.add_field(name="Current Balance",  value=f"{self.player.coin} coin",         inline=False)
         embed.set_footer(text="Head into the dungeon with /dungeonprep")
         self.clear_items()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -223,6 +283,10 @@ class ShopView(discord.ui.View):
         await self._handle_choice(interaction, "c")
 
 
+# ---------------------------------------------------------------------------
+# ShopCog
+# ---------------------------------------------------------------------------
+
 class ShopCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -234,6 +298,7 @@ class ShopCog(commands.Cog):
             await deny_access(interaction)
             session.close()
             return
+
         try:
             player = session.query(Player).filter_by(
                 discord_id=str(interaction.user.id)
@@ -242,21 +307,23 @@ class ShopCog(commands.Cog):
             if not player:
                 await interaction.response.send_message(
                     "You haven't stocked your shelves yet. Run /prepstore first.",
-                    ephemeral=True
+                    ephemeral=True,
                 )
+                session.close()
                 return
 
             if not can_shop(player):
                 if not player.prep_complete:
                     await interaction.response.send_message(
                         "The shelves are bare. Stock them first with /prepstore.",
-                        ephemeral=True
+                        ephemeral=True,
                     )
                 else:
                     await interaction.response.send_message(
                         "The Magic Closet has already closed for the day. Come back tomorrow.",
-                        ephemeral=True
+                        ephemeral=True,
                     )
+                session.close()
                 return
 
             shelf = session.query(BankItem).filter_by(
@@ -266,11 +333,37 @@ class ShopCog(commands.Cog):
             if not shelf:
                 await interaction.response.send_message(
                     "Nothing on the shelves. Run /prepstore to stock up.",
-                    ephemeral=True
+                    ephemeral=True,
                 )
+                session.close()
                 return
 
-            view = ShopView(session, player, shelf)
+            # -------------------------------------------------------------------
+            # FT-01 — Lock customer pool on first invocation, reuse on re-invoke
+            # -------------------------------------------------------------------
+            customer_pool = _load_customer_pool(player)
+
+            if customer_pool is None:
+                # First /openshop call this cycle — generate and lock the pool
+                customer_pool = _generate_customer_pool(shelf)
+                _lock_customer_pool(player, customer_pool, session)
+            else:
+                # Re-invoke within same cycle — pool already locked
+                # Filter to customers whose items are still on the floor
+                floor_ids     = {item.item_id for item in shelf}
+                customer_pool = [c for c in customer_pool if c["item_id"] in floor_ids]
+
+                if not customer_pool:
+                    # All items already sold — shop should be complete
+                    # This is an edge case guard, not normal flow
+                    await interaction.response.send_message(
+                        "All items have already been sold today.",
+                        ephemeral=True,
+                    )
+                    session.close()
+                    return
+
+            view  = ShopView(session, player, shelf, customer_pool)
             embed = view.build_stage_embed()
             await interaction.response.send_message(embed=embed, view=view)
 
