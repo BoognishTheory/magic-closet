@@ -25,9 +25,10 @@ from datetime import datetime, timedelta, timezone
 # Config
 # ---------------------------------------------------------------------------
 
-CATEGORY_NAME     = "The Magic Closet"
-REQUIRED_ROLE     = "Business Owner"
-EMBED_COLOR       = 0x5B2D8E
+CATEGORY_NAME        = "The Magic Closet"
+ENTRY_CHANNEL        = "start-your-franchise"   # Only channel /startshop works in
+REQUIRED_ROLE        = "Business Owner"
+EMBED_COLOR          = 0x5B2D8E
 RENAME_COOLDOWN_DAYS = 90
 
 # ---------------------------------------------------------------------------
@@ -108,10 +109,14 @@ async def create_player_channel(
     shop_name: str,
     bot_user: discord.ClientUser,
 ) -> discord.TextChannel:
+    """
+    Create a private text channel for the player under The Magic Closet category.
+    Visible only to the player and admins. Bot has full access.
+    """
     category = await get_or_create_category(guild)
     channel_name = channel_name_from_store(shop_name)
 
-    # Simplified overwrites — no role iteration
+    # Permissions: deny everyone, allow the player and bot
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         member: discord.PermissionOverwrite(
@@ -119,7 +124,18 @@ async def create_player_channel(
             send_messages=True,
             read_message_history=True,
         ),
+        bot_user: discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            manage_messages=True,
+            read_message_history=True,
+        ),
     }
+
+    # Also grant admins (manage_guild) visibility
+    for role in guild.roles:
+        if role.permissions.manage_guild:
+            overwrites[role] = discord.PermissionOverwrite(view_channel=True)
 
     return await guild.create_text_channel(
         name=channel_name,
@@ -150,29 +166,65 @@ def build_welcome_embed(
     town_name: str,
 ) -> discord.Embed:
     embed = discord.Embed(
-        title=f"🧙 Welcome to The Magic Closet — {shop_name}",
-        description=(
-            f"Congratulations, {player_name}.\n\n"
-            f"You are now the proud franchise owner of **The Magic Closet — {shop_name}**, "
-            f"serving the fine and presumably solvent residents of **{town_name}**.\n\n"
-            f"The sign out front says *The Magic Closet*. It will always say *The Magic Closet*. "
-            f"That is non-negotiable. Bizard has opinions about brand consistency.\n\n"
-            f"But everything inside — the shelves, the regulars, the reputation, the inexplicable "
-            f"dungeon in the back — that is *yours*. You built this. Well. You're about to build this.\n\n"
-            f"Your first order of business is stocking the shelves. The portal is already humming. "
-            f"Whatever comes through it is yours to sell.\n\n"
-            f"*Begin with* `/prepstore` *to open your first day.*\n\n"
-            f"— Bizard 🧙"
-        ),
+        title=f"Welcome to The Magic Closet — {shop_name}",
         color=EMBED_COLOR,
     )
+
+    # --- Bizard welcome letter ---
+    # [PLACEHOLDER — workshop with team]
+    # Tone: proud, warm, slightly pompous. This is the franchise owner's first moment.
+    # Bizard is congratulating them. He's also reminding them who built this.
+    embed.description = (
+        f"Congratulations, {player_name}.\n\n"
+        f"You are now the proud franchise owner of **The Magic Closet — {shop_name}**, "
+        f"serving the fine and presumably solvent residents of **{town_name}**.\n\n"
+        f"[PLACEHOLDER — 2-3 more sentences from Bizard. Workshop with team. "
+        f"Cover: the sign always says The Magic Closet, everything inside is theirs, "
+        f"the dungeon in the back is a feature not a bug.]\n\n"
+        f"— Bizard 🧙"
+    )
+
+    # --- Command cheat sheet ---
+    embed.add_field(
+        name="Your Daily Loop",
+        value=(
+            "`/prepstore` — Stock your shelves. Start here every day.\n"
+            "`/openshop` — Open the shop and sell to customers.\n"
+            "`/dungeonprep` — Choose your dungeon and loadout.\n"
+            "`/explore` — Run your dungeon node by node."
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Check Your Status",
+        value=(
+            "`/inventory` — Quick daily snapshot: bank, floor, cycle state.\n"
+            "`/bank` — Browse your full item bank by category.\n"
+            "`/quests` — View your active quests."
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Your Franchise",
+        value=(
+            "`/renameshop` — Rename your store. 90-day cooldown.\n"
+            "`/renametown` — Rename your town. 90-day cooldown.\n"
+            "`/leaderboard` — See how your franchise ranks."
+        ),
+        inline=False,
+    )
+
+    # [PLACEHOLDER — workshop with team]
+    # Footer: short Bizard sign-off. Dry, confident, one line.
     embed.set_footer(
         text=(
-            "This is your private shop channel. "
-            "All game commands are run from here. "
-            "Nobody else can see this space."
+            "[PLACEHOLDER — Bizard footer line. "
+            "Something like: 'The portal closes at midnight. Not really. But it sounds better that way.']"
         )
     )
+
     return embed
 
 # ---------------------------------------------------------------------------
@@ -412,6 +464,22 @@ class StartShopCog(commands.Cog):
     async def startshop(self, interaction: discord.Interaction):
         if not has_access(interaction):
             await deny_access(interaction)
+            return
+
+        # Must be run in #start-your-franchise
+        if interaction.channel.name != ENTRY_CHANNEL:
+            # Find the entry channel and mention it
+            entry_ch = discord.utils.get(
+                interaction.guild.text_channels, name=ENTRY_CHANNEL
+            )
+            mention = entry_ch.mention if entry_ch else f"#start-your-franchise"
+            await interaction.response.send_message(
+                # [PLACEHOLDER — workshop with team]
+                # Friendly redirect. Something like:
+                # "Your franchise journey starts over in {mention}. Head there to begin."
+                f"[PLACEHOLDER] Head to {mention} to run /startshop.",
+                ephemeral=True,
+            )
             return
 
         # Check if already set up
