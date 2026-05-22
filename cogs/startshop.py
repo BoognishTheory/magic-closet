@@ -108,14 +108,10 @@ async def create_player_channel(
     shop_name: str,
     bot_user: discord.ClientUser,
 ) -> discord.TextChannel:
-    """
-    Create a private text channel for the player under The Magic Closet category.
-    Visible only to the player and admins. Bot has full access.
-    """
     category = await get_or_create_category(guild)
     channel_name = channel_name_from_store(shop_name)
 
-    # Permissions: deny everyone, allow the player and bot
+    # Simplified overwrites — no role iteration
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         member: discord.PermissionOverwrite(
@@ -123,18 +119,7 @@ async def create_player_channel(
             send_messages=True,
             read_message_history=True,
         ),
-        bot_user: discord.PermissionOverwrite(
-            view_channel=True,
-            send_messages=True,
-            manage_messages=True,
-            read_message_history=True,
-        ),
     }
-
-    # Also grant admins (manage_guild) visibility
-    for role in guild.roles:
-        if role.permissions.manage_guild:
-            overwrites[role] = discord.PermissionOverwrite(view_channel=True)
 
     return await guild.create_text_channel(
         name=channel_name,
