@@ -131,7 +131,7 @@ class PrepCog(commands.Cog):
 
             # Build embed
             embed = discord.Embed(
-                title="?? The Magic Closet — Shelf Stocked",
+                title="?? The Magic Closet ? Shelf Stocked",
                 description="The shelves are set. Your wares are ready for today's customers.",
                 color=0x9b59b6
             )
