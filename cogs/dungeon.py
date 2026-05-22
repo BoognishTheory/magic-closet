@@ -5,6 +5,7 @@ from db.database import get_session
 from db.models import Player, ActiveRun, BankItem
 from game.access import has_access, deny_access
 from game.cycle_manager import can_dungeon
+from cogs.startshop import check_shop_channel
 from datetime import datetime
 import json
 import random
@@ -123,16 +124,16 @@ class LoadoutView(discord.ui.View):
     def build_embed(self):
         dungeon = self.dungeon
         embed = discord.Embed(
-            title=f"Loadout — {dungeon['name']}",
+            title=f"Loadout - {dungeon['name']}",
             description=dungeon["description"],
             color=0xe74c3c
         )
-        embed.add_field(name="Tier", value=str(dungeon["tier"]), inline=True)
-        embed.add_field(name="Nodes", value=str(dungeon["node_count"]), inline=True)
+        embed.add_field(name="Tier",       value=str(dungeon["tier"]),        inline=True)
+        embed.add_field(name="Nodes",      value=str(dungeon["node_count"]),  inline=True)
         embed.add_field(name="Entry Cost", value=f"{dungeon['entry_cost']} coin", inline=True)
         embed.add_field(name="Weapon Slot", value=self.selected_weapon or "Empty", inline=True)
-        embed.add_field(name="Spell Slot", value=self.selected_spell or "Empty", inline=True)
-        embed.add_field(name="Your Coin", value=f"{self.player.coin} coin", inline=True)
+        embed.add_field(name="Spell Slot",  value=self.selected_spell or "Empty",  inline=True)
+        embed.add_field(name="Your Coin",   value=f"{self.player.coin} coin",       inline=True)
         embed.set_footer(text="Select your loadout then enter the dungeon.")
         return embed
 
@@ -193,11 +194,11 @@ class LoadoutView(discord.ui.View):
 
         embed = discord.Embed(
             title=f"Entering {dungeon['name']}...",
-            description=f"You descend into the darkness. There is no turning back.\n\nRun /explore to begin.",
+            description="You descend into the darkness. There is no turning back.\n\nRun /explore to begin.",
             color=0xe74c3c
         )
-        embed.add_field(name="Weapon", value=self.selected_weapon, inline=True)
-        embed.add_field(name="Spell", value=self.selected_spell, inline=True)
+        embed.add_field(name="Weapon",      value=self.selected_weapon,       inline=True)
+        embed.add_field(name="Spell",       value=self.selected_spell,        inline=True)
         embed.add_field(name="Nodes Ahead", value=str(dungeon["node_count"]), inline=True)
         self.clear_items()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -242,11 +243,14 @@ class DungeonCog(commands.Cog):
 
     @app_commands.command(name="dungeonprep", description="Choose your dungeon and loadout.")
     async def dungeonprep(self, interaction: discord.Interaction):
-        session = get_session()
         if not has_access(interaction):
             await deny_access(interaction)
-            session.close()
             return
+
+        if not await check_shop_channel(interaction):
+            return
+
+        session = get_session()
         try:
             player = session.query(Player).filter_by(
                 discord_id=str(interaction.user.id)

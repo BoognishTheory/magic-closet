@@ -5,6 +5,7 @@ from db.database import get_session
 from db.models import Player, Quest
 from datetime import datetime
 from game.access import has_access, deny_access
+from cogs.startshop import check_shop_channel
 import json
 
 with open("data/items.json", "r") as f:
@@ -44,11 +45,14 @@ class QuestsCog(commands.Cog):
 
     @app_commands.command(name="quests", description="View your active quests.")
     async def quests(self, interaction: discord.Interaction):
-        session = get_session()
         if not has_access(interaction):
             await deny_access(interaction)
-            session.close()
             return
+
+        if not await check_shop_channel(interaction):
+            return
+
+        session = get_session()
         try:
             player = session.query(Player).filter_by(
                 discord_id=str(interaction.user.id)
@@ -73,7 +77,7 @@ class QuestsCog(commands.Cog):
             ).count()
 
             embed = discord.Embed(
-                title="📜 Quest Board",
+                title="Quest Board",
                 description="Your active quests are listed below. Each quest expires after 5 days.",
                 color=0xf39c12
             )
@@ -86,11 +90,11 @@ class QuestsCog(commands.Cog):
                 )
             else:
                 for quest in active_quests:
-                    item_def = ITEMS_BY_ID.get(quest.item_id, {})
+                    item_def   = ITEMS_BY_ID.get(quest.item_id, {})
                     dungeon_def = DUNGEONS_BY_ID.get(quest.dungeon_id, {})
-                    days_left = max(0, 5 - quest.day_count)
+                    days_left  = max(0, 5 - quest.day_count)
                     embed.add_field(
-                        name=f"Quest — {item_def.get('name', quest.item_id)}",
+                        name=f"Quest - {item_def.get('name', quest.item_id)}",
                         value=(
                             f"Find a **{item_def.get('name', quest.item_id)}** "
                             f"in **{dungeon_def.get('name', quest.dungeon_id)}**\n"
@@ -145,11 +149,11 @@ class QuestsCog(commands.Cog):
             session.add(quest)
             session.commit()
 
-            item_def = ITEMS_BY_ID.get(quest.item_id, {})
+            item_def    = ITEMS_BY_ID.get(quest.item_id, {})
             dungeon_def = DUNGEONS_BY_ID.get(quest.dungeon_id, {})
 
             await interaction.response.send_message(
-                f"📜 Quest added: Find a **{item_def.get('name', quest.item_id)}** "
+                f"Quest added: Find a **{item_def.get('name', quest.item_id)}** "
                 f"in **{dungeon_def.get('name', quest.dungeon_id)}**",
                 ephemeral=True
             )

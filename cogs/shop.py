@@ -12,6 +12,7 @@ from db.database import get_session
 from db.models import Player, BankItem
 from game.access import has_access, deny_access
 from game.cycle_manager import can_shop
+from cogs.startshop import check_shop_channel
 from datetime import datetime
 import json
 import random
@@ -46,10 +47,6 @@ STAGE_LABELS = [
 # ---------------------------------------------------------------------------
 
 def _generate_customer_pool(shelf_items: list) -> list:
-    """
-    Generate a customer for each shelf item and return as a list of dicts.
-    Called once per cycle on first /openshop invocation.
-    """
     pool = []
     for item in shelf_items:
         customer = pick_customer_for_item(item.rarity)
@@ -62,26 +59,18 @@ def _generate_customer_pool(shelf_items: list) -> list:
 
 
 def _lock_customer_pool(player, pool: list, session) -> None:
-    """
-    Serialize the customer pool to JSON and save it to the player row.
-    Committed immediately so re-invoke reads the same pool.
-    """
     player.daily_customers = json.dumps(pool)
     session.commit()
 
 
 def _load_customer_pool(player) -> list:
-    """
-    Deserialize the locked customer pool from the player row.
-    Returns None if not yet set.
-    """
     if not player.daily_customers:
         return None
     return json.loads(player.daily_customers)
 
 
 # ---------------------------------------------------------------------------
-# Existing helpers — unchanged
+# Helpers
 # ---------------------------------------------------------------------------
 
 def pick_customer_for_item(item_rarity: str) -> dict:
@@ -132,7 +121,7 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
         f"**B)** Give them the fair market value straight\n"
         f"**C)** Ask what they think it's worth first",
 
-        f"They push back — says it's too expensive. How do you handle it?\n\n"
+        f"They push back - says it's too expensive. How do you handle it?\n\n"
         f"**A)** Emphasize the value, hold your price\n"
         f"**B)** Offer a small discount to keep momentum\n"
         f"**C)** Throw in a freebie to sweeten the deal",
@@ -140,10 +129,10 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
         f"{customer['name']} makes a low counteroffer. What do you do?\n\n"
         f"**A)** Decline and restate your value\n"
         f"**B)** Meet them halfway\n"
-        f"**C)** Accept — a sale is a sale",
+        f"**C)** Accept - a sale is a sale",
 
         f"One last push before they decide. Your closing move?\n\n"
-        f"**A)** Create urgency — another buyer is interested\n"
+        f"**A)** Create urgency - another buyer is interested\n"
         f"**B)** Offer to bundle with something small\n"
         f"**C)** Stay silent and let the item speak for itself",
 
@@ -156,7 +145,7 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ShopView — customer passed in from locked pool, not generated on the fly
+# ShopView
 # ---------------------------------------------------------------------------
 
 class ShopView(discord.ui.View):
@@ -165,12 +154,11 @@ class ShopView(discord.ui.View):
         self.session             = session
         self.player              = player
         self.shelf_items         = shelf_items
-        self.customer_pool       = customer_pool   # FT-01: locked pool
+        self.customer_pool       = customer_pool
         self.current_item_index  = 0
         self.current_stage       = 0
         self.stage_score         = 0
         self.total_coin_earned   = 0
-        # FT-01: use customer from locked pool, not a fresh random pick
         self.current_customer    = customer_pool[0]["customer_data"]
         self._set_stage_buttons()
 
@@ -188,7 +176,7 @@ class ShopView(discord.ui.View):
 
     def _set_next_customer_button(self):
         self.clear_items()
-        btn = discord.ui.Button(label="Next Customer →", style=discord.ButtonStyle.success, custom_id="next_customer")
+        btn = discord.ui.Button(label="Next Customer ->", style=discord.ButtonStyle.success, custom_id="next_customer")
         btn.callback = self.next_customer
         self.add_item(btn)
 
@@ -198,7 +186,7 @@ class ShopView(discord.ui.View):
         customer = self.current_customer
 
         embed = discord.Embed(
-            title=f"🛒 The Magic Closet — {STAGE_LABELS[self.current_stage]}",
+            title=f"The Magic Closet - {STAGE_LABELS[self.current_stage]}",
             description=get_stage_description(self.current_stage, item_def, customer),
             color=0x9b59b6,
         )
@@ -233,10 +221,9 @@ class ShopView(discord.ui.View):
         self.stage_score         = 0
 
         if self.current_item_index < len(self.shelf_items):
-            # FT-01: advance to next customer from locked pool
             self.current_customer = self.customer_pool[self.current_item_index]["customer_data"]
             embed = discord.Embed(
-                title="💰 Sale Complete!",
+                title="Sale Complete!",
                 description=(
                     f"You earned **{coin_earned} coin** for the "
                     f"{item_def.get('name', 'item')}.\n\n"
@@ -261,13 +248,13 @@ class ShopView(discord.ui.View):
         self.session.commit()
 
         embed = discord.Embed(
-            title="🔒 The Magic Closet — Closed for the Day",
+            title="The Magic Closet - Closed for the Day",
             description="The last customer has left. You flip the sign to closed.",
             color=0xe74c3c,
         )
-        embed.add_field(name="Last Sale",        value=f"{last_coin_earned} coin",        inline=True)
-        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=False)
-        embed.add_field(name="Current Balance",  value=f"{self.player.coin} coin",         inline=False)
+        embed.add_field(name="Last Sale",          value=f"{last_coin_earned} coin",        inline=True)
+        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin",  inline=False)
+        embed.add_field(name="Current Balance",    value=f"{self.player.coin} coin",        inline=False)
         embed.set_footer(text="Head into the dungeon with /dungeonprep")
         self.clear_items()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -293,12 +280,14 @@ class ShopCog(commands.Cog):
 
     @app_commands.command(name="openshop", description="Open the Magic Closet and sell today's stock.")
     async def openshop(self, interaction: discord.Interaction):
-        session = get_session()
         if not has_access(interaction):
             await deny_access(interaction)
-            session.close()
             return
 
+        if not await check_shop_channel(interaction):
+            return
+
+        session = get_session()
         try:
             player = session.query(Player).filter_by(
                 discord_id=str(interaction.user.id)
@@ -338,24 +327,16 @@ class ShopCog(commands.Cog):
                 session.close()
                 return
 
-            # -------------------------------------------------------------------
-            # FT-01 — Lock customer pool on first invocation, reuse on re-invoke
-            # -------------------------------------------------------------------
             customer_pool = _load_customer_pool(player)
 
             if customer_pool is None:
-                # First /openshop call this cycle — generate and lock the pool
                 customer_pool = _generate_customer_pool(shelf)
                 _lock_customer_pool(player, customer_pool, session)
             else:
-                # Re-invoke within same cycle — pool already locked
-                # Filter to customers whose items are still on the floor
                 floor_ids     = {item.item_id for item in shelf}
                 customer_pool = [c for c in customer_pool if c["item_id"] in floor_ids]
 
                 if not customer_pool:
-                    # All items already sold — shop should be complete
-                    # This is an edge case guard, not normal flow
                     await interaction.response.send_message(
                         "All items have already been sold today.",
                         ephemeral=True,

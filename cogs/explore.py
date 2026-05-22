@@ -5,6 +5,7 @@ from db.database import get_session
 from db.models import Player, ActiveRun, BankItem, RunHistory
 from game.access import has_access, deny_access
 from game.run_manager import resolve_node, roll_death_save, MAX_STRIKES
+from cogs.startshop import check_shop_channel
 from datetime import datetime
 import json
 
@@ -103,11 +104,11 @@ class NodeView(discord.ui.View):
         total_nodes = len(sequence)
 
         embed = discord.Embed(
-            title=f"⚔️ {self.node['title']}",
+            title=f"{self.node['title']}",
             description=self.node["description"],
             color=0xe74c3c
         )
-        embed.add_field(name="Dungeon", value=dungeon.get("name", "Unknown"), inline=True)
+        embed.add_field(name="Dungeon",  value=dungeon.get("name", "Unknown"), inline=True)
         embed.add_field(
             name="Progress",
             value=f"{self.run.nodes_completed + 1} / {total_nodes}",
@@ -115,11 +116,11 @@ class NodeView(discord.ui.View):
         )
         embed.add_field(
             name="Strikes",
-            value=f"{'💀' * self.run.strikes}{'⬜' * (MAX_STRIKES - self.run.strikes)}",
+            value=f"{'X' * self.run.strikes}{'O' * (MAX_STRIKES - self.run.strikes)}",
             inline=True
         )
         embed.add_field(name="Weapon", value=self.run.weapon_slot or "None", inline=True)
-        embed.add_field(name="Spell", value=self.run.spell_slot or "None", inline=True)
+        embed.add_field(name="Spell",  value=self.run.spell_slot or "None",  inline=True)
         embed.set_footer(text="Choose your action.")
         return embed
 
@@ -133,44 +134,41 @@ class NodeView(discord.ui.View):
         if outcome["loot_item"]:
             add_loot_to_run(self.session, self.player, self.run, outcome["loot_item"])
             item_def = ITEMS_BY_ID.get(outcome["loot_item"], {})
-            loot_line = f"\n\n🎒 You found: **{item_def.get('name', outcome['loot_item'])}**"
+            loot_line = f"\n\nYou found: **{item_def.get('name', outcome['loot_item'])}**"
 
         self.run.nodes_completed += 1
         self.session.commit()
 
-        # Check death
         if self.run.strikes >= MAX_STRIKES:
             survived = roll_death_save()
             if not survived:
                 await self._end_run(interaction, outcome, loot_line, "died")
                 return
             else:
-                outcome["message"] += "\n\n💀 **Death Save!** You barely cling to life..."
+                outcome["message"] += "\n\n**Death Save!** You barely cling to life..."
                 self.run.strikes = MAX_STRIKES - 1
                 self.session.commit()
 
-        # Check run complete
         next_node = get_current_node(self.run)
         if not next_node:
             await self._end_run(interaction, outcome, loot_line, "completed")
             return
 
-        # Continue to next node
         result_embed = discord.Embed(
-            title="✅ Outcome" if outcome["success"] else "❌ Outcome",
+            title="Outcome" if outcome["success"] else "Outcome",
             description=outcome["message"] + loot_line,
             color=0x2ecc71 if outcome["success"] else 0xe74c3c
         )
         result_embed.add_field(
             name="Strikes",
-            value=f"{'💀' * self.run.strikes}{'⬜' * (MAX_STRIKES - self.run.strikes)}",
+            value=f"{'X' * self.run.strikes}{'O' * (MAX_STRIKES - self.run.strikes)}",
             inline=True
         )
         result_embed.set_footer(text="Press Continue to face the next encounter.")
 
         self.clear_items()
         continue_btn = discord.ui.Button(
-            label="Continue →",
+            label="Continue ->",
             style=discord.ButtonStyle.success,
             custom_id="continue"
         )
@@ -203,24 +201,22 @@ class NodeView(discord.ui.View):
 
     async def _end_run(self, interaction, outcome, loot_line, result: str):
         loot = json.loads(self.run.loot_this_run)
-        loot_names = [
-            ITEMS_BY_ID.get(i, {}).get("name", i) for i in loot
-        ]
+        loot_names = [ITEMS_BY_ID.get(i, {}).get("name", i) for i in loot]
 
         complete_run(self.session, self.player, self.run, result)
 
         if result == "completed":
             color = 0x2ecc71
-            title = "🏆 Dungeon Complete!"
-            desc = outcome["message"] + loot_line + "\n\nYou emerge victorious from the dungeon."
+            title = "Dungeon Complete!"
+            desc  = outcome["message"] + loot_line + "\n\nYou emerge victorious from the dungeon."
         elif result == "fled":
             color = 0xf39c12
-            title = "🏃 You Fled!"
-            desc = "You escaped with your life — and whatever you had on you."
+            title = "You Fled!"
+            desc  = "You escaped with your life - and whatever you had on you."
         else:
             color = 0x2c2c2c
-            title = "💀 You Died."
-            desc = "The dungeon claimed you. Better luck next cycle."
+            title = "You Died."
+            desc  = "The dungeon claimed you. Better luck next cycle."
 
         embed = discord.Embed(title=title, description=desc, color=color)
         embed.add_field(
@@ -228,7 +224,6 @@ class NodeView(discord.ui.View):
             value=", ".join(loot_names) if loot_names else "None",
             inline=False
         )
-        embed.add_field(name="Nodes Completed", value=str(self.run.nodes_completed if result != "completed" else self.player.id), inline=True)
         embed.set_footer(text="Your loot has been added to your bank. Come back tomorrow.")
         self.clear_items()
         await interaction.response.edit_message(embed=embed, view=self)
@@ -241,8 +236,8 @@ class NodeView(discord.ui.View):
         loot_names = [ITEMS_BY_ID.get(i, {}).get("name", i) for i in loot]
 
         embed = discord.Embed(
-            title="🏃 You Fled!",
-            description="You escaped with your life — and whatever you had on you.",
+            title="You Fled!",
+            description="You escaped with your life - and whatever you had on you.",
             color=0xf39c12
         )
         embed.add_field(
@@ -260,13 +255,16 @@ class ExploreCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="explore", description="Explore the dungeon — face the next encounter.")
+    @app_commands.command(name="explore", description="Explore the dungeon - face the next encounter.")
     async def explore(self, interaction: discord.Interaction):
-        session = get_session()
         if not has_access(interaction):
             await deny_access(interaction)
-            session.close()
             return
+
+        if not await check_shop_channel(interaction):
+            return
+
+        session = get_session()
         try:
             player = session.query(Player).filter_by(
                 discord_id=str(interaction.user.id)

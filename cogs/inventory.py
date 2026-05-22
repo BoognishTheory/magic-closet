@@ -2,10 +2,10 @@
 cogs/inventory.py
 Slash command handlers for /bank and /inventory.
 
-/bank      — Root → Branch navigation by item category. Button-driven.
-/inventory — Compact daily snapshot. Single embed, no buttons.
+/bank      - Root -> Branch navigation by item category. Button-driven.
+/inventory - Compact daily snapshot. Single embed, no buttons.
 
-Both commands require the Patreon subscriber role.
+Both commands require the Business Owner role and must be run in the player's TMC channel.
 """
 
 import types
@@ -24,9 +24,10 @@ from game.bank import (
     active_quests_count,
     get_player_by_discord_id,
 )
+from cogs.startshop import check_shop_channel
 
 # ---------------------------------------------------------------------------
-# Config — update PATREON_ROLE_NAME to match your server's exact role name
+# Config
 # ---------------------------------------------------------------------------
 
 PATREON_ROLE_NAME = "Business Owner"
@@ -49,7 +50,7 @@ def has_patreon_role(interaction: discord.Interaction) -> bool:
 def gate_embed() -> discord.Embed:
     return discord.Embed(
         description=(
-            "✨ This command is available to Patreon subscribers.\n"
+            "This command is available to Patreon subscribers.\n"
             "Support the show to unlock The Magic Closet!"
         ),
         color=EMBED_COLOR,
@@ -66,15 +67,15 @@ def cycle_state_line(player) -> str:
     dungeon = getattr(player, "dungeon_complete", False) or False
 
     if not prep and not shop and not dungeon:
-        return "⏳ Ready to prep  ·  Run /prepstore to begin today's cycle"
+        return "Ready to prep - Run /prepstore to begin today's cycle"
     elif not prep:
-        return "⏳ Prep pending  ·  /prepstore to stock the shelves"
+        return "Prep pending - /prepstore to stock the shelves"
     elif not shop:
-        return "✅ Prep complete  ·  ⏳ Shop awaits  ·  /openshop to open"
+        return "Prep complete - Shop awaits - /openshop to open"
     elif not dungeon:
-        return "✅ Prep complete  ·  ✅ Shop complete  ·  ⏳ Dungeon awaits"
+        return "Prep complete - Shop complete - Dungeon awaits"
     else:
-        return "✅ Full cycle complete  ·  Next cycle resets in 24h"
+        return "Full cycle complete - Next cycle resets in 24h"
 
 
 # ---------------------------------------------------------------------------
@@ -83,12 +84,12 @@ def cycle_state_line(player) -> str:
 
 def build_root_embed(player_name: str, total: int) -> discord.Embed:
     embed = discord.Embed(
-        title=f"🏦 Bizard's Bank  —  {player_name}",
-        description=f"**{total} items** in bank  ·  Select a category below",
+        title=f"Bizard's Bank  -  {player_name}",
+        description=f"**{total} items** in bank  -  Select a category below",
         color=EMBED_COLOR,
     )
     embed.set_footer(
-        text="Categories with 0 items are greyed out  ·  /inventory for daily snapshot"
+        text="Categories with 0 items are greyed out  -  /inventory for daily snapshot"
     )
     return embed
 
@@ -99,17 +100,17 @@ def build_branch_embed(
     result:      dict,
     sort:        str,
 ) -> discord.Embed:
-    sort_label = "Rarity" if sort == "rarity" else "Value"
-    description = f"**{result['total']} items**  ·  Sorted by: {sort_label}"
+    sort_label  = "Rarity" if sort == "rarity" else "Value"
+    description = f"**{result['total']} items**  -  Sorted by: {sort_label}"
 
     if result["has_wondrous"]:
         description += (
-            "\n\n✨ You have a Wondrous item. "
+            "\n\nYou have a Wondrous item. "
             "Bizard isn't sure where it came from. Neither should you be."
         )
 
     embed = discord.Embed(
-        title=f"{CATEGORY_EMOJI.get(category, '')} {category}  —  {player_name}'s Bank",
+        title=f"{CATEGORY_EMOJI.get(category, '')} {category}  -  {player_name}'s Bank",
         description=description,
         color=EMBED_COLOR,
     )
@@ -119,7 +120,7 @@ def build_branch_embed(
             rarity_emoji = RARITY_EMOJI.get(item["rarity"], "")
             embed.add_field(
                 name=f"{rarity_emoji} {item['name']}",
-                value=f"{rarity_emoji} {item['rarity']}  ·  💰 {item['sell_value']} coin",
+                value=f"{rarity_emoji} {item['rarity']}  -  {item['sell_value']} coin",
                 inline=False,
             )
     else:
@@ -133,7 +134,7 @@ def build_branch_embed(
         embed.set_footer(
             text=(
                 f"Page {result['page']} of {result['total_pages']}"
-                f"  ·  {result['total']} {category}"
+                f"  -  {result['total']} {category}"
             )
         )
     return embed
@@ -147,25 +148,23 @@ def build_inventory_embed(
     quest_count:  int,
 ) -> discord.Embed:
     embed = discord.Embed(
-        title=f"🧙 Bizard's Inventory  —  {player_name}",
+        title=f"Bizard's Inventory  -  {player_name}",
         description=cycle_state_line(player),
         color=EMBED_COLOR,
     )
 
-    # Bank summary
     if summary["total"] == 0:
-        bank_value = "Empty — complete your first dungeon run tonight"
+        bank_value = "Empty - complete your first dungeon run tonight"
     else:
         parts = []
         for rarity in ["Common", "Uncommon", "Rare", "Very Rare", "Legendary", "Wondrous"]:
             count = summary["by_rarity"].get(rarity, 0)
             emoji = RARITY_EMOJI[rarity]
             parts.append(f"{emoji} {count}")
-        bank_value = f"{summary['total']} items total  ·  " + "  ".join(parts)
+        bank_value = f"{summary['total']} items total  -  " + "  ".join(parts)
 
-    embed.add_field(name="🏦 Bank", value=bank_value, inline=False)
+    embed.add_field(name="Bank", value=bank_value, inline=False)
 
-    # Floor
     if floor:
         lines = [
             f"{RARITY_EMOJI.get(item['rarity'], '')} {item['name']}"
@@ -173,20 +172,19 @@ def build_inventory_embed(
         ]
         floor_value = "\n".join(lines)
     else:
-        floor_value = "Shelves empty — /prepstore to stock up"
+        floor_value = "Shelves empty - /prepstore to stock up"
 
-    embed.add_field(name="🏪 On the Floor", value=floor_value, inline=False)
+    embed.add_field(name="On the Floor", value=floor_value, inline=False)
 
-    # Active quests — omit if none
     if quest_count > 0:
         embed.add_field(
-            name="🗺️ Active Quests",
-            value=f"{quest_count} active quest(s) — see /quests for details",
+            name="Active Quests",
+            value=f"{quest_count} active quest(s) - see /quests for details",
             inline=False,
         )
 
     embed.set_footer(
-        text="Use /bank to browse full inventory  ·  /prepstore to stock shelves"
+        text="Use /bank to browse full inventory  -  /prepstore to stock shelves"
     )
     return embed
 
@@ -202,8 +200,8 @@ class BankRootView(discord.ui.View):
         self.player_name = player_name
 
         for i, category in enumerate(CATEGORIES):
-            count    = cat_counts.get(category, 0)
-            emoji    = CATEGORY_EMOJI.get(category, "")
+            count = cat_counts.get(category, 0)
+            emoji = CATEGORY_EMOJI.get(category, "")
             btn = discord.ui.Button(
                 label=f"{emoji} {category} ({count})",
                 style=discord.ButtonStyle.secondary,
@@ -246,16 +244,15 @@ class BankBranchView(discord.ui.View):
 
         paginated = result["total_pages"] > 1
 
-        # Row 0 — Back | Sort: Rarity | Sort: Value
         back_btn = discord.ui.Button(
-            label="◄ Back",
+            label="Back",
             style=discord.ButtonStyle.secondary,
             row=0, custom_id="bank_back",
         )
         back_btn.callback = self._back_callback
         self.add_item(back_btn)
 
-        for sort_key, label in [("rarity", "Sort: Rarity ▼"), ("value", "Sort: Value ▼")]:
+        for sort_key, label in [("rarity", "Sort: Rarity"), ("value", "Sort: Value")]:
             btn = discord.ui.Button(
                 label=label,
                 style=(
@@ -269,10 +266,9 @@ class BankBranchView(discord.ui.View):
             btn.callback = self._make_sort_callback(sort_key)
             self.add_item(btn)
 
-        # Row 1 — Prev | Next (only when paginated)
         if paginated:
             prev_btn = discord.ui.Button(
-                label="◄ Prev",
+                label="Prev",
                 style=discord.ButtonStyle.secondary,
                 disabled=(page <= 1),
                 row=1, custom_id="bank_prev",
@@ -281,7 +277,7 @@ class BankBranchView(discord.ui.View):
             self.add_item(prev_btn)
 
             next_btn = discord.ui.Button(
-                label="Next ►",
+                label="Next",
                 style=discord.ButtonStyle.secondary,
                 disabled=(page >= result["total_pages"]),
                 row=1, custom_id="bank_next",
@@ -344,10 +340,13 @@ class InventoryCog(commands.Cog):
             await interaction.response.send_message(embed=gate_embed(), ephemeral=True)
             return
 
+        if not await check_shop_channel(interaction):
+            return
+
         player = get_player_by_discord_id(interaction.user.id)
         if not player:
             await interaction.response.send_message(
-                "You don't have an account yet. Run /prepstore to get started!",
+                "You don't have an account yet. Run /startshop to get started!",
                 ephemeral=True,
             )
             return
@@ -361,16 +360,18 @@ class InventoryCog(commands.Cog):
 
     @app_commands.command(
         name="inventory",
-        description="Quick daily snapshot — bank summary, shop floor, cycle state.",
+        description="Quick daily snapshot - bank summary, shop floor, cycle state.",
     )
     async def inventory(self, interaction: discord.Interaction):
         if not has_patreon_role(interaction):
             await interaction.response.send_message(embed=gate_embed(), ephemeral=True)
             return
 
+        if not await check_shop_channel(interaction):
+            return
+
         player = get_player_by_discord_id(interaction.user.id)
 
-        # New player — no DB row yet. Show empty state with fresh defaults.
         if not player:
             blank = types.SimpleNamespace(
                 prep_complete=False,

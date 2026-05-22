@@ -5,11 +5,11 @@ from db.database import get_session
 from db.models import Player, BankItem, SkillPoints
 from game.access import has_access, deny_access
 from game.cycle_manager import can_prep, start_cycle
+from cogs.startshop import check_shop_channel
 from datetime import datetime
 import json
 import random
 
-# Load item definitions at startup
 with open("data/items.json", "r") as f:
     ITEMS_DATA = json.load(f)["items"]
 
@@ -22,7 +22,7 @@ RARITY_WEIGHTS = {
     "epic": 3
 }
 
-SHELF_SIZE = 6  # How many items get surfaced to the shelf
+SHELF_SIZE = 6
 
 
 def get_or_create_player(session, discord_id: str) -> Player:
@@ -37,7 +37,6 @@ def get_or_create_player(session, discord_id: str) -> Player:
         session.add(player)
         session.flush()
 
-        # Create skill points row
         skill_points = SkillPoints(player_id=player.id)
         session.add(skill_points)
         session.commit()
@@ -50,20 +49,17 @@ def surface_bank_items(session, player: Player) -> list:
     Pull items from the bank onto the shelf.
     Weighted by rarity. Returns list of BankItems now on_floor.
     """
-    # Clear previous shelf
     existing_shelf = session.query(BankItem).filter_by(
         player_id=player.id, on_floor=True
     ).all()
     for item in existing_shelf:
         item.on_floor = False
 
-    # Get all bank items not on floor
     bank = session.query(BankItem).filter_by(
         player_id=player.id, on_floor=False
     ).all()
 
     if not bank:
-        # Seed starter items if bank is empty
         starter_ids = ["iron_sword", "leather_boots", "health_potion"]
         for item_id in starter_ids:
             item_def = ITEMS_BY_ID.get(item_id)
@@ -81,12 +77,10 @@ def surface_bank_items(session, player: Player) -> list:
             player_id=player.id, on_floor=False
         ).all()
 
-    # Weight selection by rarity
     weights = [RARITY_WEIGHTS.get(item.rarity, 10) for item in bank]
     count = min(SHELF_SIZE, len(bank))
     selected = random.choices(bank, weights=weights, k=count)
 
-    # Deduplicate
     seen = set()
     shelf = []
     for item in selected:
@@ -105,33 +99,35 @@ class PrepCog(commands.Cog):
 
     @app_commands.command(name="prepstore", description="Stock your shelves and open the Magic Closet for the day.")
     async def prepstore(self, interaction: discord.Interaction):
+        if not has_access(interaction):
+            await deny_access(interaction)
+            return
+
+        if not await check_shop_channel(interaction):
+            return
+
         session = get_session()
         try:
             player = get_or_create_player(session, str(interaction.user.id))
 
             if not can_prep(player):
                 await interaction.response.send_message(
-                    "??? The Closet is already running today. Come back tomorrow for a fresh cycle.",
+                    "The Closet is already running today. Come back tomorrow for a fresh cycle.",
                     ephemeral=True
                 )
                 return
 
-            # Start the cycle
             start_cycle(player)
             player.last_active = datetime.utcnow()
             session.commit()
 
-            # Surface items to shelf
             shelf = surface_bank_items(session, player)
 
-            # Mark prep complete
             player.prep_complete = True
             session.commit()
 
-
-            # Build embed
             embed = discord.Embed(
-                title="?? The Magic Closet ? Shelf Stocked",
+                title="The Magic Closet - Shelf Stocked",
                 description="The shelves are set. Your wares are ready for today's customers.",
                 color=0x9b59b6
             )
