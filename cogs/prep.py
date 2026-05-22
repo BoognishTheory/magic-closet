@@ -1,4 +1,4 @@
-﻿import discord
+import discord
 from discord import app_commands
 from discord.ext import commands
 from db.database import get_session
@@ -106,16 +106,12 @@ class PrepCog(commands.Cog):
     @app_commands.command(name="prepstore", description="Stock your shelves and open the Magic Closet for the day.")
     async def prepstore(self, interaction: discord.Interaction):
         session = get_session()
-        if not has_access(interaction):
-            await deny_access(interaction)
-            session.close()
-            return
         try:
             player = get_or_create_player(session, str(interaction.user.id))
 
             if not can_prep(player):
                 await interaction.response.send_message(
-                    "🕰️ The Closet is already running today. Come back tomorrow for a fresh cycle.",
+                    "??? The Closet is already running today. Come back tomorrow for a fresh cycle.",
                     ephemeral=True
                 )
                 return
@@ -135,7 +131,7 @@ class PrepCog(commands.Cog):
 
             # Build embed
             embed = discord.Embed(
-                title="🪄 The Magic Closet — Shelf Stocked",
+                title="?? The Magic Closet � Shelf Stocked",
                 description="The shelves are set. Your wares are ready for today's customers.",
                 color=0x9b59b6
             )

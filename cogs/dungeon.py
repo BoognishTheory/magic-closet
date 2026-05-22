@@ -247,10 +247,6 @@ class DungeonCog(commands.Cog):
             await deny_access(interaction)
             session.close()
             return
-        if not has_access(interaction):
-            await deny_access(interaction)
-            session.close()
-            return
         try:
             player = session.query(Player).filter_by(
                 discord_id=str(interaction.user.id)
