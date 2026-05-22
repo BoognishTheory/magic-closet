@@ -20,7 +20,11 @@ class Player(Base):
     shop_complete    = Column(Boolean, default=False)
     dungeon_complete = Column(Boolean, default=False)
     daily_customers  = Column(Text, nullable=True)
-    last_active      = Column(DateTime, nullable=True)
+    shop_name        = Column(Text, nullable=True)        
+    town_name        = Column(Text, nullable=True)       
+    name_last_changed_shop   = Column(DateTime, nullable=True)    
+    name_last_changed_town   = Column(DateTime, nullable=True)    
+    last_active     = Column(DateTime, nullable=True)
     created_at      = Column(DateTime, default=datetime.utcnow)
     debt            = Column(Boolean, default=False)
 

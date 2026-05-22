@@ -15,6 +15,7 @@ MY_GUILD = discord.Object(id=1484388406065758349)
 EXTENSIONS = [
     "cogs.prep",
     "cogs.shop",
+    "cogs.startshop",
     "cogs.admin",
     "cogs.dungeon",
     "cogs.explore",
