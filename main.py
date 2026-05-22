@@ -38,6 +38,10 @@ async def on_ready():
     start_scheduler()
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     try:
+        # Clear global commands first to avoid conflicts with guild commands
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync(guild=None)
+        # Now sync to the test guild
         bot.tree.clear_commands(guild=MY_GUILD)
         bot.tree.copy_global_to(guild=MY_GUILD)
         synced = await bot.tree.sync(guild=MY_GUILD)
@@ -100,31 +104,8 @@ async def on_message(message: discord.Message):
         await asyncio.sleep(5)
         await notice.delete()
 
-    # -------------------------------------------------------------------
-    # #the-break-room — images and GIFs only
-    # -------------------------------------------------------------------
-    elif message.channel.name == BREAK_ROOM:
-        has_image = bool(message.attachments) or bool(message.embeds)
-
-        # Allow tenor/giphy GIF links — Discord auto-embeds these
-        is_gif_link = any(
-            domain in message.content.lower()
-            for domain in ["tenor.com", "giphy.com", "media.discordapp"]
-        )
-
-        if not has_image and not is_gif_link:
-            await message.delete()
-            notice = await message.channel.send(
-                # [PLACEHOLDER — workshop with team]
-                # Short, community-spirited, not scolding.
-                # Something like: "The break room is for images and GIFs only.
-                # Got a screenshot of that Huge Profit? Drop it here."
-                f"{message.author.mention} "
-                f"[PLACEHOLDER — redirect message for text in #the-break-room. "
-                f"Images and GIFs only. Friendly tone.]",
-            )
-            await asyncio.sleep(5)
-            await notice.delete()
+    # #the-break-room — open chat, no enforcement needed
+    # Slowmode (15s) is set at the channel level on creation.
 
     await bot.process_commands(message)
 

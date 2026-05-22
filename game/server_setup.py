@@ -119,11 +119,10 @@ def build_break_room_embed() -> discord.Embed:
     embed.add_field(
         name="House Rules",
         value=(
-            "**Images and GIFs only.**\n"
-            "This is a show-and-tell channel. Huge profits, rare drops, "
-            "level-ups, spectacular dungeon deaths — if it happened in your "
-            "franchise, post it here.\n\n"
-            "**15 second cooldown** between posts.\n\n"
+            "Open chat for all Business Owners.\n"
+            "Share your wins, your losses, your dungeon horror stories.\n"
+            "Screenshots and GIFs encouraged.\n\n"
+            "**15 second cooldown** between messages.\n\n"
             "[PLACEHOLDER — any additional community guidelines. "
             "Keep it short. Players read rules once if you're lucky.]"
         ),
