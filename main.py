@@ -3,7 +3,7 @@ from discord.ext import commands
 from config import DISCORD_TOKEN
 from db.database import init_db
 from scheduler.jobs import start_scheduler
-from game.server_setup import setup_server
+from game.server_setup import setup_server, ENTRY_CHANNEL, BREAK_ROOM
 
 intents = discord.Intents.default()
 intents.members = True
@@ -50,8 +50,8 @@ async def on_ready():
 async def on_guild_join(guild: discord.Guild):
     """
     Fires when the bot is added to a server.
-    Creates The Magic Closet category and #start-your-franchise channel.
-    Safe to call on re-add — checks for existing structure before creating.
+    Creates The Magic Closet category, #start-your-franchise, and #the-break-room.
+    Safe to call on re-add — skips any structure that already exists.
     """
     print(f"Joined guild: {guild.name} (ID: {guild.id})")
     try:
@@ -60,8 +60,9 @@ async def on_guild_join(guild: discord.Guild):
             print(f"Server structure already exists in {guild.name} — skipped creation.")
         else:
             print(f"Server structure created in {guild.name}.")
-            print(f"  Category: {result['category'].name}")
-            print(f"  Channel:  #{result['channel'].name}")
+            print(f"  Category:  {result['category'].name}")
+            print(f"  Entry:     #{result['entry_channel'].name}")
+            print(f"  Break room: #{result['break_room'].name}")
     except Exception as e:
         print(f"Error during server setup in {guild.name}: {e}")
 
@@ -69,30 +70,61 @@ async def on_guild_join(guild: discord.Guild):
 @bot.event
 async def on_message(message: discord.Message):
     """
-    Deletes non-slash-command messages in #start-your-franchise.
-    Keeps the entry channel clean — only bot responses visible.
-    Non-bot text messages are deleted with an ephemeral-style note.
+    Channel enforcement for The Magic Closet channels.
+
+    #start-your-franchise — deletes all text messages (slash commands still work).
+    #the-break-room       — deletes text messages, allows images and GIFs only.
     """
-    # Ignore bot messages
     if message.author.bot:
         return
 
-    if (
-        message.guild
-        and message.channel.name == "start-your-franchise"
-    ):
+    if not message.guild:
+        return
+
+    import asyncio
+
+    # -------------------------------------------------------------------
+    # #start-your-franchise — no text messages
+    # -------------------------------------------------------------------
+    if message.channel.name == ENTRY_CHANNEL:
         await message.delete()
-        # Send a brief redirect — auto-deletes after 5 seconds
         notice = await message.channel.send(
-            f"{message.author.mention} "
             # [PLACEHOLDER — workshop with team]
-            # Short, friendly, not scolding. Something like:
-            # "This channel is for /startshop only. Chat lives elsewhere."
-            "[PLACEHOLDER — redirect message for non-command input in #start-your-franchise]",
+            # Short, friendly, not scolding.
+            # Something like: "Use /startshop to open your franchise.
+            # This channel doesn't accept text messages."
+            f"{message.author.mention} "
+            f"[PLACEHOLDER — redirect message for text input in #start-your-franchise. "
+            f"Direct them to /startshop.]",
         )
-        import asyncio
         await asyncio.sleep(5)
         await notice.delete()
+
+    # -------------------------------------------------------------------
+    # #the-break-room — images and GIFs only
+    # -------------------------------------------------------------------
+    elif message.channel.name == BREAK_ROOM:
+        has_image = bool(message.attachments) or bool(message.embeds)
+
+        # Allow tenor/giphy GIF links — Discord auto-embeds these
+        is_gif_link = any(
+            domain in message.content.lower()
+            for domain in ["tenor.com", "giphy.com", "media.discordapp"]
+        )
+
+        if not has_image and not is_gif_link:
+            await message.delete()
+            notice = await message.channel.send(
+                # [PLACEHOLDER — workshop with team]
+                # Short, community-spirited, not scolding.
+                # Something like: "The break room is for images and GIFs only.
+                # Got a screenshot of that Huge Profit? Drop it here."
+                f"{message.author.mention} "
+                f"[PLACEHOLDER — redirect message for text in #the-break-room. "
+                f"Images and GIFs only. Friendly tone.]",
+            )
+            await asyncio.sleep(5)
+            await notice.delete()
 
     await bot.process_commands(message)
 

@@ -1,12 +1,13 @@
 """
 game/server_setup.py
 Utility for initializing The Magic Closet server structure.
-Called from main.py on_guild_join and can be called from admin /setupserver command.
+Called from main.py on_guild_join and available for admin /setupserver command.
 
-Creates:
-- "The Magic Closet" category (if not present)
-- #start-your-franchise channel (if not present)
-- Pinned welcome message in #start-your-franchise
+Creates under "The Magic Closet" category:
+  #start-your-franchise  — visible to all, slash commands only, no text
+  #the-break-room        — Business Owners only, images/GIFs only, 15s slowmode
+
+Per-player TMC channels are created by /startshop in cogs/startshop.py.
 
 Safe to call multiple times — checks for existing structure before creating.
 """
@@ -17,66 +18,125 @@ import discord
 # Config
 # ---------------------------------------------------------------------------
 
-CATEGORY_NAME   = "The Magic Closet"
-ENTRY_CHANNEL   = "start-your-franchise"
-EMBED_COLOR     = 0x5B2D8E
+CATEGORY_NAME    = "The Magic Closet"
+ENTRY_CHANNEL    = "start-your-franchise"
+BREAK_ROOM       = "the-break-room"
+REQUIRED_ROLE    = "Business Owner"
+EMBED_COLOR      = 0x5B2D8E
+SLOWMODE_SECONDS = 15
 
 
 # ---------------------------------------------------------------------------
-# Welcome message
+# Welcome embed — #start-your-franchise
 # ---------------------------------------------------------------------------
 
-def build_welcome_embed() -> discord.Embed:
+def build_entry_embed() -> discord.Embed:
     embed = discord.Embed(
-        title="Welcome to The Magic Closet",
+        title="The Magic Closet — Open for Business",
         color=EMBED_COLOR,
     )
 
-    # --- Bizard voice section ---
     # [PLACEHOLDER — workshop with team]
-    # Tone: warm, slightly pompous, genuinely excited. Bizard is proud of the
-    # franchise model. He wants you here. He also wants you to know he built this.
+    # Bizard voice — short, punchy, inviting. This is the storefront.
+    # Non-subscribers see this. Make it sell the game.
+    # Tone: confident, slightly mysterious, genuinely exciting.
+    # Something like: "The portal is open. The shelves are waiting.
+    # Somewhere between here and the dungeon, something extraordinary
+    # is about to happen. It's called commerce."
     embed.description = (
         "**A message from Bizard the Wizard:**\n\n"
-        "*[PLACEHOLDER — Bizard introduces the franchise. Something like:*\n"
-        "*'The portal is open. The shelves are waiting. Somewhere between here*\n"
-        "*and the dungeon, something extraordinary is about to happen.*\n"
-        "*It's called commerce. Welcome to The Magic Closet.']*\n\n"
+        "*[PLACEHOLDER — Bizard storefront intro. Workshop with team.\n"
+        "Short — 3 sentences max. Non-subscribers read this first.\n"
+        "Make them want to subscribe before they finish reading it.]*\n\n"
         "— Bizard 🧙"
     )
 
-    # --- Practical instructions ---
+    embed.add_field(
+        name="Ready to open your franchise?",
+        value=(
+            "**Step 1 — Subscribe on Patreon**\n"
+            "[PLACEHOLDER — Patreon link]\n\n"
+            "**Step 2 — Link your Discord**\n"
+            "Connect your Discord account to Patreon to receive the "
+            "**Business Owner** role automatically.\n\n"
+            "**Step 3 — Run /startshop**\n"
+            "Once you have the role, run `/startshop` right here. "
+            "You'll name your store, name your town, and get your "
+            "private shop channel where the game lives."
+        ),
+        inline=False,
+    )
+
+    embed.add_field(
+        name="Already a Business Owner?",
+        value=(
+            "Run `/startshop` below to open your franchise.\n\n"
+            "[PLACEHOLDER — note for returning subscribers or anyone "
+            "who already has the role and needs to run setup]"
+        ),
+        inline=False,
+    )
+
     # [PLACEHOLDER — workshop with team]
-    # Keep this tight. Players should be able to scan it in 10 seconds.
-    embed.add_field(
-        name="How to Open Your Franchise",
-        value=(
-            "**Step 1 — Become a subscriber**\n"
-            "You'll need the **Business Owner** role to play.\n"
-            "[PLACEHOLDER — add Patreon link here]\n\n"
-            "**Step 2 — Start your franchise**\n"
-            "Once you have the role, run `/startshop` right here in this channel.\n"
-            "You'll name your store, name your town, and get your private shop channel.\n\n"
-            "**Step 3 — Head to your channel**\n"
-            "Everything happens in your private channel. "
-            "Run `/prepstore` there to begin your first day."
-        ),
-        inline=False,
-    )
-
-    embed.add_field(
-        name="Already a subscriber?",
-        value=(
-            "Run `/startshop` below. That's it. The rest explains itself.\n\n"
-            "[PLACEHOLDER — any additional notes for returning or migrating subscribers]"
-        ),
-        inline=False,
-    )
-
+    # Footer: one dry Bizard line. Confident, brief.
     embed.set_footer(
         text=(
-            "[PLACEHOLDER — footer flavor text. Something short from Bizard. "
-            "Could be a tagline or a dry one-liner.]"
+            "[PLACEHOLDER — Bizard footer. One line. "
+            "Something like: 'The portal has been open since Tuesday. "
+            "Nobody told you sooner. That's on you.']"
+        )
+    )
+
+    return embed
+
+
+# ---------------------------------------------------------------------------
+# Welcome embed — #the-break-room
+# ---------------------------------------------------------------------------
+
+def build_break_room_embed() -> discord.Embed:
+    embed = discord.Embed(
+        title="The Break Room",
+        color=EMBED_COLOR,
+    )
+
+    # [PLACEHOLDER — workshop with team]
+    # Bizard voice — warm, collegial. This is where franchise owners hang out.
+    # They've made it past /startshop. Bizard acknowledges them as peers.
+    # Tone: slightly less formal than the entry channel. Still Bizard.
+    # Something like: "You made it to the back. This is where the
+    # real business happens — showing off your wins and pretending
+    # the losses were strategic."
+    embed.description = (
+        "**From Bizard:**\n\n"
+        "*[PLACEHOLDER — Bizard break room intro. Workshop with team.\n"
+        "Warm, collegial, a little proud of everyone here.\n"
+        "Acknowledge that this is the community space.\n"
+        "Keep it to 3 sentences max.]*\n\n"
+        "— Bizard 🧙"
+    )
+
+    embed.add_field(
+        name="House Rules",
+        value=(
+            "**Images and GIFs only.**\n"
+            "This is a show-and-tell channel. Huge profits, rare drops, "
+            "level-ups, spectacular dungeon deaths — if it happened in your "
+            "franchise, post it here.\n\n"
+            "**15 second cooldown** between posts.\n\n"
+            "[PLACEHOLDER — any additional community guidelines. "
+            "Keep it short. Players read rules once if you're lucky.]"
+        ),
+        inline=False,
+    )
+
+    # [PLACEHOLDER — workshop with team]
+    # Footer: one Bizard line. Community-spirited but still dry.
+    embed.set_footer(
+        text=(
+            "[PLACEHOLDER — break room footer. "
+            "Something like: 'What happens in the break room "
+            "ends up on the leaderboard eventually.']"
         )
     )
 
@@ -90,11 +150,12 @@ def build_welcome_embed() -> discord.Embed:
 async def setup_server(guild: discord.Guild, bot_user: discord.ClientUser) -> dict:
     """
     Idempotent server setup. Safe to call multiple times.
-    Returns dict with 'category', 'channel', 'already_existed' keys.
+    Returns dict with category, entry_channel, break_room, already_existed keys.
     """
     result = {
         "category":       None,
-        "channel":        None,
+        "entry_channel":  None,
+        "break_room":     None,
         "already_existed": False,
     }
 
@@ -104,19 +165,26 @@ async def setup_server(guild: discord.Guild, bot_user: discord.ClientUser) -> di
         result["already_existed"] = True
     else:
         category = await guild.create_category(CATEGORY_NAME)
-
     result["category"] = category
 
-    # --- Find or create #start-your-franchise ---
-    channel = discord.utils.get(guild.text_channels, name=ENTRY_CHANNEL)
-    if not channel:
-        # Everyone can view and use slash commands but cannot send messages
-        overwrites = {
+    # --- Find or create Business Owner role reference ---
+    bo_role = discord.utils.get(guild.roles, name=REQUIRED_ROLE)
+
+    # -------------------------------------------------------------------
+    # #start-your-franchise
+    # Visible to everyone. Slash commands allowed. No text messages.
+    # -------------------------------------------------------------------
+    entry_channel = discord.utils.get(
+        guild.text_channels, name=ENTRY_CHANNEL
+    )
+    if not entry_channel:
+        entry_overwrites = {
             guild.default_role: discord.PermissionOverwrite(
                 view_channel=True,
                 send_messages=False,
                 use_application_commands=True,
                 read_message_history=True,
+                add_reactions=False,
             ),
             bot_user: discord.PermissionOverwrite(
                 view_channel=True,
@@ -126,20 +194,71 @@ async def setup_server(guild: discord.Guild, bot_user: discord.ClientUser) -> di
             ),
         }
 
-        channel = await guild.create_text_channel(
+        entry_channel = await guild.create_text_channel(
             name=ENTRY_CHANNEL,
             category=category,
-            overwrites=overwrites,
+            overwrites=entry_overwrites,
             topic=(
+                # [PLACEHOLDER — workshop with team]
                 "[PLACEHOLDER — channel topic. Something like: "
-                "'The entrance to The Magic Closet. Run /startshop to open your franchise.']"
+                "'The entrance to The Magic Closet. "
+                "Run /startshop to open your franchise.']"
             ),
         )
 
-        # Post and pin the welcome message
-        embed = build_welcome_embed()
-        msg = await channel.send(embed=embed)
+        embed = build_entry_embed()
+        msg = await entry_channel.send(embed=embed)
         await msg.pin()
 
-    result["channel"] = channel
+    result["entry_channel"] = entry_channel
+
+    # -------------------------------------------------------------------
+    # #the-break-room
+    # Business Owners only. Images and GIFs only. 15s slowmode.
+    # -------------------------------------------------------------------
+    break_room = discord.utils.get(
+        guild.text_channels, name=BREAK_ROOM
+    )
+    if not break_room:
+        break_overwrites = {
+            guild.default_role: discord.PermissionOverwrite(
+                view_channel=False,
+            ),
+            bot_user: discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                manage_messages=True,
+                read_message_history=True,
+            ),
+        }
+
+        # Grant Business Owner role access if it exists
+        if bo_role:
+            break_overwrites[bo_role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True,
+                add_reactions=True,
+            )
+
+        break_room = await guild.create_text_channel(
+            name=BREAK_ROOM,
+            category=category,
+            overwrites=break_overwrites,
+            slowmode_delay=SLOWMODE_SECONDS,
+            topic=(
+                # [PLACEHOLDER — workshop with team]
+                "[PLACEHOLDER — break room topic. Something like: "
+                "'Images and GIFs only. Show off your wins. "
+                "15 second cooldown.']"
+            ),
+        )
+
+        embed = build_break_room_embed()
+        msg = await break_room.send(embed=embed)
+        await msg.pin()
+
+    result["break_room"] = break_room
     return result
