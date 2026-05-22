@@ -38,10 +38,6 @@ async def on_ready():
     start_scheduler()
     print(f"Logged in as {bot.user} (ID: {bot.user.id})")
     try:
-        # Clear global commands first to avoid conflicts with guild commands
-        bot.tree.clear_commands(guild=None)
-        await bot.tree.sync(guild=None)
-        # Now sync to the test guild
         bot.tree.clear_commands(guild=MY_GUILD)
         bot.tree.copy_global_to(guild=MY_GUILD)
         synced = await bot.tree.sync(guild=MY_GUILD)
