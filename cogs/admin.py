@@ -26,8 +26,20 @@ class AdminCog(commands.Cog):
             player.prep_complete    = False
             player.shop_complete    = False
             player.dungeon_complete = False
+            player.daily_customers          = None
+            player.shop_name                = None    # ← ADD
+            player.town_name                = None    # ← ADD
+            player.name_last_changed_shop   = None    # ← ADD
+            player.name_last_changed_town   = None    # ← ADD
             player.last_active      = datetime.utcnow()
             session.commit()
+            
+            for ch in interaction.guild.text_channels:
+                    if ch.name.startswith("tmc-"):
+                            if ch.topic and interaction.user.display_name in ch.topic:
+                                    await ch.delete(reason="Debug full reset")
+                                    break
+
             await interaction.response.send_message(
                 "🔧 Full reset complete. cycle_start cleared. Run /prepstore to begin.",
                 ephemeral=True
