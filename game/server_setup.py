@@ -193,6 +193,15 @@ async def setup_server(guild: discord.Guild, bot_user: discord.ClientUser) -> di
             ),
         }
 
+        # Allow Business Owners to use slash commands in this channel
+        if bo_role:
+            entry_overwrites[bo_role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,          # needed for slash command interactions
+                use_application_commands=True,
+                read_message_history=True,
+            )
+
         entry_channel = await guild.create_text_channel(
             name=ENTRY_CHANNEL,
             category=category,
