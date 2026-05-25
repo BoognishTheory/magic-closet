@@ -51,9 +51,22 @@ async def on_guild_join(guild: discord.Guild):
     """
     Fires when the bot is added to a server.
     Creates The Magic Closet category, #start-your-franchise, and #the-break-room.
+    Syncs slash commands to the guild immediately so no redeploy is needed.
     Safe to call on re-add — skips any structure that already exists.
     """
     print(f"Joined guild: {guild.name} (ID: {guild.id})")
+
+    # Sync commands to this guild immediately on join
+    try:
+        guild_obj = discord.Object(id=guild.id)
+        bot.tree.clear_commands(guild=guild_obj)
+        bot.tree.copy_global_to(guild=guild_obj)
+        synced = await bot.tree.sync(guild=guild_obj)
+        print(f"Synced {len(synced)} slash command(s) to {guild.name}")
+    except Exception as e:
+        print(f"Command sync failed for {guild.name}: {e}")
+
+    # Create server structure
     try:
         result = await setup_server(guild, bot.user)
         if result["already_existed"]:
@@ -70,10 +83,8 @@ async def on_guild_join(guild: discord.Guild):
 @bot.event
 async def on_message(message: discord.Message):
     """
-    Channel enforcement for The Magic Closet channels.
-
     #start-your-franchise — deletes all text messages (slash commands still work).
-    #the-break-room       — deletes text messages, allows images and GIFs only.
+    #the-break-room       — open chat, slowmode enforced at channel level.
     """
     if message.author.bot:
         return
@@ -83,16 +94,11 @@ async def on_message(message: discord.Message):
 
     import asyncio
 
-    # -------------------------------------------------------------------
-    # #start-your-franchise — no text messages
-    # -------------------------------------------------------------------
     if message.channel.name == ENTRY_CHANNEL:
         await message.delete()
         notice = await message.channel.send(
             # [PLACEHOLDER — workshop with team]
             # Short, friendly, not scolding.
-            # Something like: "Use /startshop to open your franchise.
-            # This channel doesn't accept text messages."
             f"{message.author.mention} "
             f"[PLACEHOLDER — redirect message for text input in #start-your-franchise. "
             f"Direct them to /startshop.]",
@@ -100,8 +106,8 @@ async def on_message(message: discord.Message):
         await asyncio.sleep(5)
         await notice.delete()
 
-    # #the-break-room — open chat, no enforcement needed
-    # Slowmode (15s) is set at the channel level on creation.
+    # Break room — open chat, no enforcement needed.
+    # Slowmode (15s) set at channel level on creation.
 
     await bot.process_commands(message)
 
