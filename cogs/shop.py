@@ -1,8 +1,7 @@
 """
 cogs/shop.py
 FT-01: Customer pool locked on first /openshop call per cycle.
-Re-invoking /openshop within the same cycle returns the same customers.
-Pool cleared by start_cycle() in cycle_manager.py when 24hr cycle resets.
+FT-03: Sale outcome tier displayed per customer before next customer loads.
 """
 
 import discord
@@ -40,6 +39,29 @@ STAGE_LABELS = [
     "Closing Pitch",
     "Final Decision",
 ]
+
+# ---------------------------------------------------------------------------
+# FT-03 — Sale outcome tiers
+# Score range is 0-14 across 7 stages (max 2 per stage)
+# ---------------------------------------------------------------------------
+
+def get_outcome_tier(score: int) -> tuple[str, str, int]:
+    """
+    Returns (tier_label, tier_emoji, color) based on total score.
+    Score range: 0-14
+    """
+    if score >= 13:
+        return "Huge Profit",   "🏆", 0xf1c40f
+    elif score >= 10:
+        return "Medium Profit", "💰", 0x2ecc71
+    elif score >= 7:
+        return "Small Profit",  "✅", 0x27ae60
+    elif score >= 5:
+        return "Broken Even",   "➖", 0x95a5a6
+    elif score >= 3:
+        return "Sold at a Loss","📉", 0xe67e22
+    else:
+        return "Failed Sale",   "❌", 0xe74c3c
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +233,9 @@ class ShopView(discord.ui.View):
         item_def = ITEMS_BY_ID.get(item.item_id, {})
         coin_earned = calculate_sale_price(item_def, self.stage_score)
 
+        # FT-03: determine outcome tier before committing
+        tier_label, tier_emoji, tier_color = get_outcome_tier(self.stage_score)
+
         self.player.coin += coin_earned
         self.total_coin_earned += coin_earned
         item.on_floor = False
@@ -218,31 +243,48 @@ class ShopView(discord.ui.View):
 
         self.current_item_index += 1
         self.current_stage       = 0
+        self.current_score_last  = self.stage_score
         self.stage_score         = 0
 
-        if self.current_item_index < len(self.shelf_items):
+        more_customers = self.current_item_index < len(self.shelf_items)
+
+        # FT-03: show outcome tier embed before advancing
+        embed = discord.Embed(
+            title=f"{tier_emoji} {tier_label}",
+            description=(
+                f"**{item_def.get('name', 'Item')}** sold to **{self.current_customer['name']}**.\n\n"
+                f"You earned **{coin_earned} coin**."
+            ),
+            color=tier_color,
+        )
+        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=True)
+        embed.add_field(name="Balance",            value=f"{self.player.coin} coin",        inline=True)
+
+        if more_customers:
             self.current_customer = self.customer_pool[self.current_item_index]["customer_data"]
-            embed = discord.Embed(
-                title="Sale Complete!",
-                description=(
-                    f"You earned **{coin_earned} coin** for the "
-                    f"{item_def.get('name', 'item')}.\n\n"
-                    f"A new customer is already eyeing your wares."
-                ),
-                color=0x2ecc71,
-            )
-            embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=False)
+            embed.set_footer(text=f"Next customer is already waiting.")
             self._set_next_customer_button()
-            await interaction.response.edit_message(embed=embed, view=self)
         else:
-            await self._close_shop(interaction, coin_earned)
+            embed.set_footer(text="That was the last customer. Closing up.")
+            self._set_close_button()
+
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    def _set_close_button(self):
+        self.clear_items()
+        btn = discord.ui.Button(label="Close Shop", style=discord.ButtonStyle.secondary, custom_id="close_shop")
+        btn.callback = self._close_shop_btn
+        self.add_item(btn)
 
     async def next_customer(self, interaction: discord.Interaction):
         self._set_stage_buttons()
         embed = self.build_stage_embed()
         await interaction.response.edit_message(content=None, embed=embed, view=self)
 
-    async def _close_shop(self, interaction: discord.Interaction, last_coin_earned: int):
+    async def _close_shop_btn(self, interaction: discord.Interaction):
+        await self._close_shop(interaction)
+
+    async def _close_shop(self, interaction: discord.Interaction):
         self.player.shop_complete = True
         self.player.last_active   = datetime.utcnow()
         self.session.commit()
@@ -252,8 +294,7 @@ class ShopView(discord.ui.View):
             description="The last customer has left. You flip the sign to closed.",
             color=0xe74c3c,
         )
-        embed.add_field(name="Last Sale",          value=f"{last_coin_earned} coin",        inline=True)
-        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin",  inline=False)
+        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=False)
         embed.add_field(name="Current Balance",    value=f"{self.player.coin} coin",        inline=False)
         embed.set_footer(text="Head into the dungeon with /dungeonprep")
         self.clear_items()

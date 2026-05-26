@@ -132,11 +132,6 @@ async def create_player_channel(
         ),
     }
 
-    # Also grant admins (manage_guild) visibility
-    for role in guild.roles:
-        if role.permissions.manage_guild:
-            overwrites[role] = discord.PermissionOverwrite(view_channel=True)
-
     return await guild.create_text_channel(
         name=channel_name,
         category=category,

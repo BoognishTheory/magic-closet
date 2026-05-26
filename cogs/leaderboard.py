@@ -19,24 +19,25 @@ class LeaderboardCog(commands.Cog):
     async def leaderboard(self, interaction: discord.Interaction):
         session = get_session()
         try:
-            # Top 10 by coin
+            # Top 10 by coin — join to get discord_id alongside coin
             top_coin = session.query(Player).order_by(Player.coin.desc()).limit(10).all()
 
-            # Top 10 by completed dungeon runs
+            # Top 10 by completed runs — join RunHistory to Player to get discord_id
             top_runs = (
                 session.query(
-                    RunHistory.player_id,
+                    Player.discord_id,
                     func.count(RunHistory.id).label("run_count")
                 )
-                .filter_by(outcome="completed")
-                .group_by(RunHistory.player_id)
+                .join(RunHistory, Player.id == RunHistory.player_id)
+                .filter(RunHistory.outcome == "completed")
+                .group_by(Player.discord_id)
                 .order_by(func.count(RunHistory.id).desc())
                 .limit(10)
                 .all()
             )
 
             embed = discord.Embed(
-                title="🏆 The Magic Closet — Hall of Fame",
+                title="The Magic Closet — Hall of Fame",
                 description="The most successful merchants and dungeon runners in the realm.",
                 color=0xf1c40f
             )
@@ -47,10 +48,12 @@ class LeaderboardCog(commands.Cog):
                 try:
                     user = await interaction.client.fetch_user(int(player.discord_id))
                     name = user.display_name
-                except:
+                except Exception:
                     name = f"Player {player.discord_id[-4:]}"
                 medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i + 1}."
-                coin_lines.append(f"{medal} **{name}** — {player.coin} coin")
+                # Use shop_name if set, otherwise just player name
+                display = f"{player.shop_name} ({name})" if player.shop_name else name
+                coin_lines.append(f"{medal} **{display}** — {player.coin} coin")
 
             embed.add_field(
                 name="💰 Richest Merchants",
@@ -60,12 +63,12 @@ class LeaderboardCog(commands.Cog):
 
             # Runs leaderboard
             run_lines = []
-            for i, (player_id, run_count) in enumerate(top_runs):
+            for i, (discord_id, run_count) in enumerate(top_runs):
                 try:
-                    user = await interaction.client.fetch_user(player_id)
+                    user = await interaction.client.fetch_user(int(discord_id))
                     name = user.display_name
-                except:
-                    name = f"Player {str(player_id)[-4:]}"
+                except Exception:
+                    name = f"Player {str(discord_id)[-4:]}"
                 medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i + 1}."
                 run_lines.append(f"{medal} **{name}** — {run_count} completed runs")
 

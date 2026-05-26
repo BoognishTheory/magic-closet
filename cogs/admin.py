@@ -27,10 +27,10 @@ class AdminCog(commands.Cog):
             player.shop_complete    = False
             player.dungeon_complete = False
             player.daily_customers          = None
-            player.shop_name                = None    # ← ADD
-            player.town_name                = None    # ← ADD
-            player.name_last_changed_shop   = None    # ← ADD
-            player.name_last_changed_town   = None    # ← ADD
+            player.shop_name                = None
+            player.town_name                = None
+            player.name_last_changed_shop   = None
+            player.name_last_changed_town   = None
             player.last_active      = datetime.utcnow()
             session.commit()
             
