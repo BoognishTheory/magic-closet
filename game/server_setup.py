@@ -162,9 +162,20 @@ async def setup_server(guild: discord.Guild, bot_user: discord.ClientUser) -> di
     category = discord.utils.get(guild.categories, name=CATEGORY_NAME)
     if category:
         result["already_existed"] = True
+        # Lock down existing open categories retroactively
+        await category.set_permissions(
+            guild.default_role,
+            view_channel=False
+    )
     else:
-        category = await guild.create_category(CATEGORY_NAME)
+        category = await guild.create_category(
+            CATEGORY_NAME,
+            overwrites={
+                guild.default_role: discord.PermissionOverwrite(view_channel=False)
+        }
+    )
     result["category"] = category
+
 
     # --- Find or create Business Owner role reference ---
     bo_role = discord.utils.get(guild.roles, name=REQUIRED_ROLE)
