@@ -1,4 +1,4 @@
-"""
+﻿"""
 game/server_setup.py
 Utility for initializing The Magic Closet server structure.
 Called from main.py on_guild_join. Safe to call multiple times.
