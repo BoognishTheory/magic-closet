@@ -1,11 +1,6 @@
 """
 game/level_up.py
 Shared level-up logic used by shop.py and explore.py.
-
-apply_xp_and_check_levelup() — awards XP, checks threshold, increments level,
-                                awards skill point if levelled up.
-post_levelup_message()       — posts the Bizard congratulations embed to the
-                                player's TMC channel.
 """
 
 import discord
@@ -13,11 +8,6 @@ import random
 from config import SHOP_LEVEL_THRESHOLDS
 from game.startshop_utils import channel_name_from_store
 
-
-# ---------------------------------------------------------------------------
-# Bizard level-up quips — one chosen at random per level-up
-# [PLACEHOLDER — workshop with team for final flavor text]
-# ---------------------------------------------------------------------------
 
 BIZARD_QUIPS = [
     "The shelves shimmer. The portal hums a little louder. Something has changed.",
@@ -30,25 +20,12 @@ BIZARD_QUIPS = [
     "Level up. Bizard raises a glass of something that smells like lightning. 'To commerce.'",
 ]
 
-TREE_NAMES = {
-    "keen_eye":      "Keen Eye",
-    "smooth_talker": "Smooth Talker",
-    "heavy_hauler":  "Heavy Hauler",
-}
-
-
-# ---------------------------------------------------------------------------
-# Core level-up logic
-# ---------------------------------------------------------------------------
 
 def apply_xp_and_check_levelup(player, skill_points_row, xp_earned: int) -> tuple[bool, int]:
     """
     Adds XP to player and checks for level-up.
-    If levelled up: increments shop_level, carries over remainder XP,
-    and awards 1 unspent skill point.
-
-    Returns (levelled_up: bool, new_level: int).
-    Does NOT commit — caller must commit after calling this.
+    Awards 1 unspent skill point if levelled up.
+    Does NOT commit — caller must commit.
     """
     if xp_earned <= 0:
         return False, player.shop_level or 1
@@ -67,24 +44,16 @@ def apply_xp_and_check_levelup(player, skill_points_row, xp_earned: int) -> tupl
     return False, current_level
 
 
-# ---------------------------------------------------------------------------
-# Level-up embed
-# ---------------------------------------------------------------------------
-
 def build_levelup_embed(
     player_name: str,
     new_level: int,
     skill_points_row,
 ) -> discord.Embed:
-    """
-    Bizard's magical congratulations message.
-    Posts to the player's private TMC channel.
-    """
-    quip = random.choice(BIZARD_QUIPS)
+    quip    = random.choice(BIZARD_QUIPS)
     unspent = getattr(skill_points_row, "unspent_points", 1) or 1
 
     embed = discord.Embed(
-        title=f"A scroll materializes in the air before you...",
+        title="A scroll materializes in the air before you...",
         description=(
             f"*{quip}*\n\n"
             f"**The Magic Closet — Level {new_level}**\n\n"
@@ -96,11 +65,10 @@ def build_levelup_embed(
         color=0xf1c40f,
     )
 
-    # Show current tree ranks
     if skill_points_row:
-        ke   = getattr(skill_points_row, "keen_eye",      0) or 0
-        st   = getattr(skill_points_row, "smooth_talker", 0) or 0
-        hh   = getattr(skill_points_row, "heavy_hauler",  0) or 0
+        ke = getattr(skill_points_row, "keen_eye",      0) or 0
+        st = getattr(skill_points_row, "smooth_talker", 0) or 0
+        hh = getattr(skill_points_row, "heavy_hauler",  0) or 0
         embed.add_field(
             name="Current Skill Tree Ranks",
             value=(
@@ -115,10 +83,6 @@ def build_levelup_embed(
     return embed
 
 
-# ---------------------------------------------------------------------------
-# Post level-up message to player's TMC channel
-# ---------------------------------------------------------------------------
-
 async def post_levelup_message(
     guild: discord.Guild,
     shop_name: str,
@@ -128,7 +92,7 @@ async def post_levelup_message(
 ) -> None:
     """
     Finds the player's TMC channel and posts the level-up embed.
-    Fails silently if channel not found — level-up still applies.
+    Checks bot permissions before sending. Fails silently if blocked.
     """
     if not shop_name:
         return
@@ -139,5 +103,25 @@ async def post_levelup_message(
     if not channel:
         return
 
+    # Verify bot has permission to send in this channel before attempting
+    bot_member = guild.me
+    if bot_member:
+        perms = channel.permissions_for(bot_member)
+        if not perms.send_messages or not perms.view_channel:
+            # Bot lacks permission — attempt to fix overwrites then retry
+            try:
+                await channel.set_permissions(
+                    bot_member,
+                    view_channel=True,
+                    send_messages=True,
+                    manage_messages=True,
+                    read_message_history=True,
+                )
+            except Exception:
+                return  # Can't fix permissions — fail silently
+
     embed = build_levelup_embed(player_name, new_level, skill_points_row)
-    await channel.send(embed=embed)
+    try:
+        await channel.send(embed=embed)
+    except discord.Forbidden:
+        pass  # Fail silently — level-up still applies, message just didn't send
