@@ -28,11 +28,11 @@ class Player(Base):
     created_at              = Column(DateTime, default=datetime.utcnow)
     debt                    = Column(Boolean, default=False)
 
-    skill_points    = relationship("SkillPoints", back_populates="player", uselist=False)
-    bank_items      = relationship("BankItem", back_populates="player")
-    active_run      = relationship("ActiveRun", back_populates="player", uselist=False)
-    quests          = relationship("Quest", back_populates="player")
-    run_history     = relationship("RunHistory", back_populates="player")
+    skill_points = relationship("SkillPoints", back_populates="player", uselist=False)
+    bank_items   = relationship("BankItem", back_populates="player")
+    active_run   = relationship("ActiveRun", back_populates="player", uselist=False)
+    quests       = relationship("Quest", back_populates="player")
+    run_history  = relationship("RunHistory", back_populates="player")
 
 
 class SkillPoints(Base):
@@ -40,24 +40,25 @@ class SkillPoints(Base):
 
     id              = Column(Integer, primary_key=True)
     player_id       = Column(Integer, ForeignKey("players.id"), nullable=False)
-    keen_eye        = Column(Integer, default=0)
-    smooth_talker   = Column(Integer, default=0)
-    heavy_hauler    = Column(Integer, default=0)
+    unspent_points  = Column(Integer, default=0)   # awarded on shop level-up
+    keen_eye        = Column(Integer, default=0)   # rank 0-8 (VS max rank 4)
+    smooth_talker   = Column(Integer, default=0)   # rank 0-8 (VS max rank 4)
+    heavy_hauler    = Column(Integer, default=0)   # rank 0-8 (VS max rank 4)
 
-    player          = relationship("Player", back_populates="skill_points")
+    player = relationship("Player", back_populates="skill_points")
 
 
 class BankItem(Base):
     __tablename__ = "bank_items"
 
-    id              = Column(Integer, primary_key=True)
-    player_id       = Column(Integer, ForeignKey("players.id"), nullable=False)
-    item_id         = Column(Text, nullable=False)
-    rarity          = Column(Text, nullable=False)
-    on_floor        = Column(Boolean, default=False)
-    acquired_at     = Column(DateTime, default=datetime.utcnow)
+    id          = Column(Integer, primary_key=True)
+    player_id   = Column(Integer, ForeignKey("players.id"), nullable=False)
+    item_id     = Column(Text, nullable=False)
+    rarity      = Column(Text, nullable=False)
+    on_floor    = Column(Boolean, default=False)
+    acquired_at = Column(DateTime, default=datetime.utcnow)
 
-    player          = relationship("Player", back_populates="bank_items")
+    player = relationship("Player", back_populates="bank_items")
 
 
 class ActiveRun(Base):
@@ -75,22 +76,22 @@ class ActiveRun(Base):
     item_slot       = Column(Text)
     started_at      = Column(DateTime, default=datetime.utcnow)
 
-    player          = relationship("Player", back_populates="active_run")
+    player = relationship("Player", back_populates="active_run")
 
 
 class Quest(Base):
     __tablename__ = "quests"
 
-    id              = Column(Integer, primary_key=True)
-    player_id       = Column(Integer, ForeignKey("players.id"), nullable=False)
-    item_id         = Column(Text, nullable=False)
-    dungeon_id      = Column(Text, nullable=False)
-    day_count       = Column(Integer, default=0)
-    week_number     = Column(Integer, nullable=False)
-    status          = Column(Text, default="active")
-    created_at      = Column(DateTime, default=datetime.utcnow)
+    id          = Column(Integer, primary_key=True)
+    player_id   = Column(Integer, ForeignKey("players.id"), nullable=False)
+    item_id     = Column(Text, nullable=False)
+    dungeon_id  = Column(Text, nullable=False)
+    day_count   = Column(Integer, default=0)
+    week_number = Column(Integer, nullable=False)
+    status      = Column(Text, default="active")
+    created_at  = Column(DateTime, default=datetime.utcnow)
 
-    player          = relationship("Player", back_populates="quests")
+    player = relationship("Player", back_populates="quests")
 
 
 class RunHistory(Base):
@@ -105,4 +106,4 @@ class RunHistory(Base):
     coin_spent      = Column(Integer, default=0)
     created_at      = Column(DateTime, default=datetime.utcnow)
 
-    player          = relationship("Player", back_populates="run_history")
+    player = relationship("Player", back_populates="run_history")

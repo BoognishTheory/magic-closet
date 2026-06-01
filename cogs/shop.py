@@ -3,22 +3,19 @@ cogs/shop.py
 FT-01: Customer pool locked on first /openshop call per cycle.
 FT-03: Sale outcome tier displayed per customer before next customer loads.
 XP:    Phase-normalized shop XP awarded at close. Huge Profit bonus applied.
+       Level-up check via shared game/level_up.py — posts Bizard message to TMC channel.
 """
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 from db.database import get_session
-from db.models import Player, BankItem
+from db.models import Player, BankItem, SkillPoints
 from game.access import has_access, deny_access
 from game.cycle_manager import can_shop
+from game.level_up import apply_xp_and_check_levelup, post_levelup_message
 from cogs.startshop import check_shop_channel
-from config import (
-    SHOP_XP_MAX,
-    HUGE_PROFIT_BONUS,
-    HUGE_PROFIT_BONUS_CAP,
-    SHOP_LEVEL_THRESHOLDS,
-)
+from config import SHOP_XP_MAX, HUGE_PROFIT_BONUS, HUGE_PROFIT_BONUS_CAP, SHOP_LEVEL_THRESHOLDS
 from datetime import datetime
 import json
 import random
@@ -47,17 +44,14 @@ STAGE_LABELS = [
     "Final Decision",
 ]
 
-# Max possible score per customer across 7 stages
 MAX_SCORE_PER_CUSTOMER = 14
 
 
 # ---------------------------------------------------------------------------
-# FT-03 — Sale outcome tiers
-# Score range: 0-14 across 7 stages (max 2 per stage)
+# Sale outcome tiers
 # ---------------------------------------------------------------------------
 
 def get_outcome_tier(score: int) -> tuple[str, str, int]:
-    """Returns (tier_label, tier_emoji, color) based on total score."""
     if score >= 13:
         return "Huge Profit",    "🏆", 0xf1c40f
     elif score >= 10:
@@ -73,49 +67,25 @@ def get_outcome_tier(score: int) -> tuple[str, str, int]:
 
 
 # ---------------------------------------------------------------------------
-# XP calculation — phase-normalized
+# XP calculation
 # ---------------------------------------------------------------------------
 
 def calculate_shop_xp(total_score: int, customers_served: int, huge_profit_count: int) -> int:
     """
     Phase-normalized shop XP.
-
-    XP = round(SHOP_XP_MAX * (total_score / max_possible_score))
-    + HUGE_PROFIT_BONUS per Huge Profit (capped at HUGE_PROFIT_BONUS_CAP)
-
     One customer or four — same scale, same ceiling.
-    Prevents cheesing by stocking one item and scoring a single perfect sale.
     """
     if customers_served == 0:
         return 0
-
-    max_possible = MAX_SCORE_PER_CUSTOMER * customers_served
-    performance_ratio = total_score / max_possible
-    base_xp = round(SHOP_XP_MAX * performance_ratio)
-    bonus_xp = min(huge_profit_count * HUGE_PROFIT_BONUS, HUGE_PROFIT_BONUS_CAP)
-
+    max_possible    = MAX_SCORE_PER_CUSTOMER * customers_served
+    performance     = total_score / max_possible
+    base_xp         = round(SHOP_XP_MAX * performance)
+    bonus_xp        = min(huge_profit_count * HUGE_PROFIT_BONUS, HUGE_PROFIT_BONUS_CAP)
     return base_xp + bonus_xp
 
 
-def apply_xp_and_check_levelup(player, xp_earned: int) -> tuple[bool, int]:
-    """
-    Adds XP to player and checks for level-up.
-    Returns (levelled_up: bool, new_level: int).
-    Handles remainder carry-over correctly.
-    """
-    player.xp += xp_earned
-    threshold = SHOP_LEVEL_THRESHOLDS.get(player.shop_level, 999)
-
-    if player.xp >= threshold:
-        player.xp -= threshold
-        player.shop_level += 1
-        return True, player.shop_level
-
-    return False, player.shop_level
-
-
 # ---------------------------------------------------------------------------
-# FT-01 — Customer pool generation and locking
+# FT-01 — Customer pool
 # ---------------------------------------------------------------------------
 
 def _generate_customer_pool(shelf_items: list) -> list:
@@ -129,13 +99,11 @@ def _generate_customer_pool(shelf_items: list) -> list:
         })
     return pool
 
-
-def _lock_customer_pool(player, pool: list, session) -> None:
+def _lock_customer_pool(player, pool, session):
     player.daily_customers = json.dumps(pool)
     session.commit()
 
-
-def _load_customer_pool(player) -> list:
+def _load_customer_pool(player):
     if not player.daily_customers:
         return None
     return json.loads(player.daily_customers)
@@ -147,13 +115,9 @@ def _load_customer_pool(player) -> list:
 
 def pick_customer_for_item(item_rarity: str) -> dict:
     matches = [c for c in CUSTOMERS_DATA if c["tier"] == item_rarity]
-    if not matches:
-        matches = CUSTOMERS_DATA
-    return random.choice(matches)
-
+    return random.choice(matches if matches else CUSTOMERS_DATA)
 
 from cogs.hotmarket import get_hot_market_multiplier
-
 
 def calculate_sale_price(item: dict, score: int) -> int:
     base       = item["sell_value"]
@@ -161,7 +125,6 @@ def calculate_sale_price(item: dict, score: int) -> int:
     bonus      = 1.0 + (score * 0.10)
     hot        = get_hot_market_multiplier(item["id"])
     return int(base * multiplier * bonus * hot)
-
 
 def score_choice(stage: int, choice: str) -> int:
     matrix = [
@@ -174,7 +137,6 @@ def score_choice(stage: int, choice: str) -> int:
         {"a": 2, "b": 1, "c": 0},
     ]
     return matrix[stage].get(choice, 0)
-
 
 def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
     stages = [
@@ -223,34 +185,34 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
 class ShopView(discord.ui.View):
     def __init__(self, session, player, shelf_items, customer_pool: list):
         super().__init__(timeout=120)
-        self.session              = session
-        self.player               = player
-        self.shelf_items          = shelf_items
-        self.customer_pool        = customer_pool
-        self.current_item_index   = 0
-        self.current_stage        = 0
-        self.stage_score          = 0
-        self.total_coin_earned    = 0
-        self.current_customer     = customer_pool[0]["customer_data"]
-
-        # XP tracking — accumulates across all customers this session
-        self.cumulative_score     = 0   # total score across all customers
-        self.customers_served     = 0   # incremented on each sale resolution
-        self.huge_profit_count    = 0   # incremented on Huge Profit outcomes
-
+        self.session           = session
+        self.player            = player
+        self.shelf_items       = shelf_items
+        self.customer_pool     = customer_pool
+        self.current_item_index = 0
+        self.current_stage     = 0
+        self.stage_score       = 0
+        self.total_coin_earned = 0
+        self.current_customer  = customer_pool[0]["customer_data"]
+        self.cumulative_score  = 0
+        self.customers_served  = 0
+        self.huge_profit_count = 0
         self._set_stage_buttons()
 
     def _set_stage_buttons(self):
         self.clear_items()
-        btn1 = discord.ui.Button(label="Option A", style=discord.ButtonStyle.primary,   custom_id="choice_a")
-        btn2 = discord.ui.Button(label="Option B", style=discord.ButtonStyle.secondary, custom_id="choice_b")
-        btn3 = discord.ui.Button(label="Option C", style=discord.ButtonStyle.secondary, custom_id="choice_c")
-        btn1.callback = self.choice_a
-        btn2.callback = self.choice_b
-        btn3.callback = self.choice_c
-        self.add_item(btn1)
-        self.add_item(btn2)
-        self.add_item(btn3)
+        for label, cid, cb in [
+            ("Option A", "choice_a", self.choice_a),
+            ("Option B", "choice_b", self.choice_b),
+            ("Option C", "choice_c", self.choice_c),
+        ]:
+            btn = discord.ui.Button(
+                label=label,
+                style=discord.ButtonStyle.primary if cid == "choice_a" else discord.ButtonStyle.secondary,
+                custom_id=cid,
+            )
+            btn.callback = cb
+            self.add_item(btn)
 
     def _set_next_customer_button(self):
         self.clear_items()
@@ -267,23 +229,20 @@ class ShopView(discord.ui.View):
     def build_stage_embed(self) -> discord.Embed:
         item     = self.shelf_items[self.current_item_index]
         item_def = ITEMS_BY_ID.get(item.item_id, {})
-        customer = self.current_customer
-
         embed = discord.Embed(
             title=f"The Magic Closet - {STAGE_LABELS[self.current_stage]}",
-            description=get_stage_description(self.current_stage, item_def, customer),
+            description=get_stage_description(self.current_stage, item_def, self.current_customer),
             color=0x9b59b6,
         )
-        embed.add_field(name="Item",     value=item_def.get("name", "Unknown"), inline=True)
-        embed.add_field(name="Customer", value=customer["name"],                inline=True)
-        embed.add_field(name="Stage",    value=f"{self.current_stage + 1} / 7", inline=True)
+        embed.add_field(name="Item",     value=item_def.get("name", "Unknown"),    inline=True)
+        embed.add_field(name="Customer", value=self.current_customer["name"],      inline=True)
+        embed.add_field(name="Stage",    value=f"{self.current_stage + 1} / 7",    inline=True)
         embed.set_footer(text="Choose your approach wisely.")
         return embed
 
     async def _handle_choice(self, interaction: discord.Interaction, choice: str):
         self.stage_score   += score_choice(self.current_stage, choice)
         self.current_stage += 1
-
         if self.current_stage >= 7:
             await self._resolve_sale(interaction)
         else:
@@ -293,17 +252,14 @@ class ShopView(discord.ui.View):
         item     = self.shelf_items[self.current_item_index]
         item_def = ITEMS_BY_ID.get(item.item_id, {})
         coin_earned = calculate_sale_price(item_def, self.stage_score)
-
-        # FT-03: determine outcome tier
         tier_label, tier_emoji, tier_color = get_outcome_tier(self.stage_score)
 
-        # Accumulate XP tracking data
+        # Accumulate XP data
         self.cumulative_score  += self.stage_score
         self.customers_served  += 1
         if tier_label == "Huge Profit":
             self.huge_profit_count += 1
 
-        # Commit coin + remove item from floor
         self.player.coin       += coin_earned
         self.total_coin_earned += coin_earned
         item.on_floor           = False
@@ -315,7 +271,6 @@ class ShopView(discord.ui.View):
 
         more_customers = self.current_item_index < len(self.shelf_items)
 
-        # FT-03: outcome tier embed
         embed = discord.Embed(
             title=f"{tier_emoji} {tier_label}",
             description=(
@@ -348,16 +303,24 @@ class ShopView(discord.ui.View):
         self.player.shop_complete = True
         self.player.last_active   = datetime.utcnow()
 
-        # Calculate and award shop XP
-        xp_earned = calculate_shop_xp(
-            self.cumulative_score,
-            self.customers_served,
-            self.huge_profit_count,
-        )
-        levelled_up, new_level = apply_xp_and_check_levelup(self.player, xp_earned)
+        # Load skill points row
+        sp = self.session.query(SkillPoints).filter_by(player_id=self.player.id).first()
+
+        # Calculate and award XP
+        xp_earned  = calculate_shop_xp(self.cumulative_score, self.customers_served, self.huge_profit_count)
+        levelled_up, new_level = apply_xp_and_check_levelup(self.player, sp, xp_earned)
         self.session.commit()
 
-        # Build closing embed
+        # Post level-up message to TMC channel if levelled up
+        if levelled_up:
+            await post_levelup_message(
+                interaction.guild,
+                self.player.shop_name,
+                interaction.user.display_name,
+                new_level,
+                sp,
+            )
+
         next_threshold = SHOP_LEVEL_THRESHOLDS.get(self.player.shop_level, 999)
         embed = discord.Embed(
             title="The Magic Closet - Closed for the Day",
@@ -371,27 +334,20 @@ class ShopView(discord.ui.View):
             value=f"+{xp_earned} XP  |  {self.player.xp} / {next_threshold} XP  (Level {self.player.shop_level})",
             inline=False,
         )
-
         if levelled_up:
             embed.add_field(
-                name="LEVEL UP!",
-                value=f"Your Magic Closet has reached **Level {new_level}**! A skill point awaits.",
+                name="Level Up!",
+                value=f"Bizard has sent you a message. Check your channel.",
                 inline=False,
             )
-
         embed.set_footer(text="Head into the dungeon with /dungeonprep")
         self.clear_items()
         await interaction.response.edit_message(embed=embed, view=self)
         self.session.close()
 
-    async def choice_a(self, interaction: discord.Interaction):
-        await self._handle_choice(interaction, "a")
-
-    async def choice_b(self, interaction: discord.Interaction):
-        await self._handle_choice(interaction, "b")
-
-    async def choice_c(self, interaction: discord.Interaction):
-        await self._handle_choice(interaction, "c")
+    async def choice_a(self, interaction): await self._handle_choice(interaction, "a")
+    async def choice_b(self, interaction): await self._handle_choice(interaction, "b")
+    async def choice_c(self, interaction): await self._handle_choice(interaction, "c")
 
 
 # ---------------------------------------------------------------------------
@@ -407,74 +363,42 @@ class ShopCog(commands.Cog):
         if not has_access(interaction):
             await deny_access(interaction)
             return
-
         if not await check_shop_channel(interaction):
             return
 
         session = get_session()
         try:
-            player = session.query(Player).filter_by(
-                discord_id=str(interaction.user.id)
-            ).first()
-
+            player = session.query(Player).filter_by(discord_id=str(interaction.user.id)).first()
             if not player:
-                await interaction.response.send_message(
-                    "You haven't stocked your shelves yet. Run /prepstore first.",
-                    ephemeral=True,
-                )
-                session.close()
-                return
+                await interaction.response.send_message("You haven't stocked your shelves yet. Run /prepstore first.", ephemeral=True)
+                session.close(); return
 
             if not can_shop(player):
-                if not player.prep_complete:
-                    await interaction.response.send_message(
-                        "The shelves are bare. Stock them first with /prepstore.",
-                        ephemeral=True,
-                    )
-                else:
-                    await interaction.response.send_message(
-                        "The Magic Closet has already closed for the day. Come back tomorrow.",
-                        ephemeral=True,
-                    )
-                session.close()
-                return
+                msg = "The shelves are bare. Stock them first with /prepstore." if not player.prep_complete else "The Magic Closet has already closed for the day. Come back tomorrow."
+                await interaction.response.send_message(msg, ephemeral=True)
+                session.close(); return
 
-            shelf = session.query(BankItem).filter_by(
-                player_id=player.id, on_floor=True
-            ).all()
-
+            shelf = session.query(BankItem).filter_by(player_id=player.id, on_floor=True).all()
             if not shelf:
-                await interaction.response.send_message(
-                    "Nothing on the shelves. Run /prepstore to stock up.",
-                    ephemeral=True,
-                )
-                session.close()
-                return
+                await interaction.response.send_message("Nothing on the shelves. Run /prepstore to stock up.", ephemeral=True)
+                session.close(); return
 
             customer_pool = _load_customer_pool(player)
-
             if customer_pool is None:
                 customer_pool = _generate_customer_pool(shelf)
                 _lock_customer_pool(player, customer_pool, session)
             else:
                 floor_ids     = {item.item_id for item in shelf}
                 customer_pool = [c for c in customer_pool if c["item_id"] in floor_ids]
-
                 if not customer_pool:
-                    await interaction.response.send_message(
-                        "All items have already been sold today.",
-                        ephemeral=True,
-                    )
-                    session.close()
-                    return
+                    await interaction.response.send_message("All items have already been sold today.", ephemeral=True)
+                    session.close(); return
 
             view  = ShopView(session, player, shelf, customer_pool)
-            embed = view.build_stage_embed()
-            await interaction.response.send_message(embed=embed, view=view)
+            await interaction.response.send_message(embed=view.build_stage_embed(), view=view)
 
         except Exception as e:
-            session.close()
-            raise e
+            session.close(); raise e
 
 
 async def setup(bot):

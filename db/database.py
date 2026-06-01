@@ -21,6 +21,7 @@ def run_migrations(engine):
         "ALTER TABLE players ADD COLUMN name_last_changed_town DATETIME",
         "ALTER TABLE players ADD COLUMN xp INTEGER DEFAULT 0",
         "ALTER TABLE players ADD COLUMN shop_level INTEGER DEFAULT 1",
+        "ALTER TABLE skill_points ADD COLUMN unspent_points INTEGER DEFAULT 0",
     ]
     with engine.connect() as conn:
         for sql in migrations:

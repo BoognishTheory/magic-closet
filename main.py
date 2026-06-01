@@ -25,6 +25,7 @@ EXTENSIONS = [
     "cogs.hotmarket",
     "cogs.inventory",
     "cogs.startshop",
+    "cogs.skillpoints",
 ]
 
 
