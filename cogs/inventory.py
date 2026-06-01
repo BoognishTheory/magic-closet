@@ -1,11 +1,7 @@
 """
 cogs/inventory.py
 Slash command handlers for /bank and /inventory.
-
-/bank      - Root -> Branch navigation by item category. Button-driven.
-/inventory - Compact daily snapshot. Single embed, no buttons.
-
-Both commands require the Business Owner role and must be run in the player's TMC channel.
+XP: /inventory now shows Shop Level, XP, and progress to next level.
 """
 
 import types
@@ -25,6 +21,7 @@ from game.bank import (
     get_player_by_discord_id,
 )
 from cogs.startshop import check_shop_channel
+from config import SHOP_LEVEL_THRESHOLDS
 
 # ---------------------------------------------------------------------------
 # Config
@@ -76,6 +73,23 @@ def cycle_state_line(player) -> str:
         return "Prep complete - Shop complete - Dungeon awaits"
     else:
         return "Full cycle complete - Next cycle resets in 24h"
+
+
+# ---------------------------------------------------------------------------
+# XP progress bar
+# ---------------------------------------------------------------------------
+
+def xp_progress_bar(current_xp: int, threshold: int, length: int = 10) -> str:
+    """
+    Returns a simple text progress bar.
+    e.g. [======----]  6 / 10 XP
+    """
+    if threshold <= 0:
+        return f"{current_xp} XP"
+    filled = int((current_xp / threshold) * length)
+    filled = min(filled, length)
+    bar = "=" * filled + "-" * (length - filled)
+    return f"[{bar}]  {current_xp} / {threshold} XP"
 
 
 # ---------------------------------------------------------------------------
@@ -153,6 +167,7 @@ def build_inventory_embed(
         color=EMBED_COLOR,
     )
 
+    # Bank summary
     if summary["total"] == 0:
         bank_value = "Empty - complete your first dungeon run tonight"
     else:
@@ -165,6 +180,7 @@ def build_inventory_embed(
 
     embed.add_field(name="Bank", value=bank_value, inline=False)
 
+    # Shop floor
     if floor:
         lines = [
             f"{RARITY_EMOJI.get(item['rarity'], '')} {item['name']}"
@@ -176,6 +192,18 @@ def build_inventory_embed(
 
     embed.add_field(name="On the Floor", value=floor_value, inline=False)
 
+    # XP progress
+    shop_level = getattr(player, "shop_level", 1) or 1
+    current_xp = getattr(player, "xp", 0) or 0
+    threshold  = SHOP_LEVEL_THRESHOLDS.get(shop_level, 999)
+
+    embed.add_field(
+        name=f"Shop Level {shop_level}",
+        value=xp_progress_bar(current_xp, threshold),
+        inline=False,
+    )
+
+    # Active quests
     if quest_count > 0:
         embed.add_field(
             name="Active Quests",
@@ -360,7 +388,7 @@ class InventoryCog(commands.Cog):
 
     @app_commands.command(
         name="inventory",
-        description="Quick daily snapshot - bank summary, shop floor, cycle state.",
+        description="Quick daily snapshot - bank summary, shop floor, XP, cycle state.",
     )
     async def inventory(self, interaction: discord.Interaction):
         if not has_patreon_role(interaction):
@@ -377,6 +405,8 @@ class InventoryCog(commands.Cog):
                 prep_complete=False,
                 shop_complete=False,
                 dungeon_complete=False,
+                shop_level=1,
+                xp=0,
             )
             embed = build_inventory_embed(
                 interaction.user.display_name, blank,

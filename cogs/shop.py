@@ -2,6 +2,7 @@
 cogs/shop.py
 FT-01: Customer pool locked on first /openshop call per cycle.
 FT-03: Sale outcome tier displayed per customer before next customer loads.
+XP:    Phase-normalized shop XP awarded at close. Huge Profit bonus applied.
 """
 
 import discord
@@ -12,6 +13,12 @@ from db.models import Player, BankItem
 from game.access import has_access, deny_access
 from game.cycle_manager import can_shop
 from cogs.startshop import check_shop_channel
+from config import (
+    SHOP_XP_MAX,
+    HUGE_PROFIT_BONUS,
+    HUGE_PROFIT_BONUS_CAP,
+    SHOP_LEVEL_THRESHOLDS,
+)
 from datetime import datetime
 import json
 import random
@@ -40,28 +47,71 @@ STAGE_LABELS = [
     "Final Decision",
 ]
 
+# Max possible score per customer across 7 stages
+MAX_SCORE_PER_CUSTOMER = 14
+
+
 # ---------------------------------------------------------------------------
 # FT-03 — Sale outcome tiers
-# Score range is 0-14 across 7 stages (max 2 per stage)
+# Score range: 0-14 across 7 stages (max 2 per stage)
 # ---------------------------------------------------------------------------
 
 def get_outcome_tier(score: int) -> tuple[str, str, int]:
-    """
-    Returns (tier_label, tier_emoji, color) based on total score.
-    Score range: 0-14
-    """
+    """Returns (tier_label, tier_emoji, color) based on total score."""
     if score >= 13:
-        return "Huge Profit",   "🏆", 0xf1c40f
+        return "Huge Profit",    "🏆", 0xf1c40f
     elif score >= 10:
-        return "Medium Profit", "💰", 0x2ecc71
+        return "Medium Profit",  "💰", 0x2ecc71
     elif score >= 7:
-        return "Small Profit",  "✅", 0x27ae60
+        return "Small Profit",   "✅", 0x27ae60
     elif score >= 5:
-        return "Broken Even",   "➖", 0x95a5a6
+        return "Broken Even",    "➖", 0x95a5a6
     elif score >= 3:
-        return "Sold at a Loss","📉", 0xe67e22
+        return "Sold at a Loss", "📉", 0xe67e22
     else:
-        return "Failed Sale",   "❌", 0xe74c3c
+        return "Failed Sale",    "❌", 0xe74c3c
+
+
+# ---------------------------------------------------------------------------
+# XP calculation — phase-normalized
+# ---------------------------------------------------------------------------
+
+def calculate_shop_xp(total_score: int, customers_served: int, huge_profit_count: int) -> int:
+    """
+    Phase-normalized shop XP.
+
+    XP = round(SHOP_XP_MAX * (total_score / max_possible_score))
+    + HUGE_PROFIT_BONUS per Huge Profit (capped at HUGE_PROFIT_BONUS_CAP)
+
+    One customer or four — same scale, same ceiling.
+    Prevents cheesing by stocking one item and scoring a single perfect sale.
+    """
+    if customers_served == 0:
+        return 0
+
+    max_possible = MAX_SCORE_PER_CUSTOMER * customers_served
+    performance_ratio = total_score / max_possible
+    base_xp = round(SHOP_XP_MAX * performance_ratio)
+    bonus_xp = min(huge_profit_count * HUGE_PROFIT_BONUS, HUGE_PROFIT_BONUS_CAP)
+
+    return base_xp + bonus_xp
+
+
+def apply_xp_and_check_levelup(player, xp_earned: int) -> tuple[bool, int]:
+    """
+    Adds XP to player and checks for level-up.
+    Returns (levelled_up: bool, new_level: int).
+    Handles remainder carry-over correctly.
+    """
+    player.xp += xp_earned
+    threshold = SHOP_LEVEL_THRESHOLDS.get(player.shop_level, 999)
+
+    if player.xp >= threshold:
+        player.xp -= threshold
+        player.shop_level += 1
+        return True, player.shop_level
+
+    return False, player.shop_level
 
 
 # ---------------------------------------------------------------------------
@@ -173,15 +223,21 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
 class ShopView(discord.ui.View):
     def __init__(self, session, player, shelf_items, customer_pool: list):
         super().__init__(timeout=120)
-        self.session             = session
-        self.player              = player
-        self.shelf_items         = shelf_items
-        self.customer_pool       = customer_pool
-        self.current_item_index  = 0
-        self.current_stage       = 0
-        self.stage_score         = 0
-        self.total_coin_earned   = 0
-        self.current_customer    = customer_pool[0]["customer_data"]
+        self.session              = session
+        self.player               = player
+        self.shelf_items          = shelf_items
+        self.customer_pool        = customer_pool
+        self.current_item_index   = 0
+        self.current_stage        = 0
+        self.stage_score          = 0
+        self.total_coin_earned    = 0
+        self.current_customer     = customer_pool[0]["customer_data"]
+
+        # XP tracking — accumulates across all customers this session
+        self.cumulative_score     = 0   # total score across all customers
+        self.customers_served     = 0   # incremented on each sale resolution
+        self.huge_profit_count    = 0   # incremented on Huge Profit outcomes
+
         self._set_stage_buttons()
 
     def _set_stage_buttons(self):
@@ -202,6 +258,12 @@ class ShopView(discord.ui.View):
         btn.callback = self.next_customer
         self.add_item(btn)
 
+    def _set_close_button(self):
+        self.clear_items()
+        btn = discord.ui.Button(label="Close Shop", style=discord.ButtonStyle.secondary, custom_id="close_shop")
+        btn.callback = self._close_shop_btn
+        self.add_item(btn)
+
     def build_stage_embed(self) -> discord.Embed:
         item     = self.shelf_items[self.current_item_index]
         item_def = ITEMS_BY_ID.get(item.item_id, {})
@@ -219,36 +281,41 @@ class ShopView(discord.ui.View):
         return embed
 
     async def _handle_choice(self, interaction: discord.Interaction, choice: str):
-        self.stage_score  += score_choice(self.current_stage, choice)
+        self.stage_score   += score_choice(self.current_stage, choice)
         self.current_stage += 1
 
         if self.current_stage >= 7:
             await self._resolve_sale(interaction)
         else:
-            embed = self.build_stage_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=self.build_stage_embed(), view=self)
 
     async def _resolve_sale(self, interaction: discord.Interaction):
         item     = self.shelf_items[self.current_item_index]
         item_def = ITEMS_BY_ID.get(item.item_id, {})
         coin_earned = calculate_sale_price(item_def, self.stage_score)
 
-        # FT-03: determine outcome tier before committing
+        # FT-03: determine outcome tier
         tier_label, tier_emoji, tier_color = get_outcome_tier(self.stage_score)
 
-        self.player.coin += coin_earned
+        # Accumulate XP tracking data
+        self.cumulative_score  += self.stage_score
+        self.customers_served  += 1
+        if tier_label == "Huge Profit":
+            self.huge_profit_count += 1
+
+        # Commit coin + remove item from floor
+        self.player.coin       += coin_earned
         self.total_coin_earned += coin_earned
-        item.on_floor = False
+        item.on_floor           = False
         self.session.commit()
 
         self.current_item_index += 1
         self.current_stage       = 0
-        self.current_score_last  = self.stage_score
         self.stage_score         = 0
 
         more_customers = self.current_item_index < len(self.shelf_items)
 
-        # FT-03: show outcome tier embed before advancing
+        # FT-03: outcome tier embed
         embed = discord.Embed(
             title=f"{tier_emoji} {tier_label}",
             description=(
@@ -262,7 +329,7 @@ class ShopView(discord.ui.View):
 
         if more_customers:
             self.current_customer = self.customer_pool[self.current_item_index]["customer_data"]
-            embed.set_footer(text=f"Next customer is already waiting.")
+            embed.set_footer(text="Next customer is already waiting.")
             self._set_next_customer_button()
         else:
             embed.set_footer(text="That was the last customer. Closing up.")
@@ -270,16 +337,9 @@ class ShopView(discord.ui.View):
 
         await interaction.response.edit_message(embed=embed, view=self)
 
-    def _set_close_button(self):
-        self.clear_items()
-        btn = discord.ui.Button(label="Close Shop", style=discord.ButtonStyle.secondary, custom_id="close_shop")
-        btn.callback = self._close_shop_btn
-        self.add_item(btn)
-
     async def next_customer(self, interaction: discord.Interaction):
         self._set_stage_buttons()
-        embed = self.build_stage_embed()
-        await interaction.response.edit_message(content=None, embed=embed, view=self)
+        await interaction.response.edit_message(content=None, embed=self.build_stage_embed(), view=self)
 
     async def _close_shop_btn(self, interaction: discord.Interaction):
         await self._close_shop(interaction)
@@ -287,15 +347,38 @@ class ShopView(discord.ui.View):
     async def _close_shop(self, interaction: discord.Interaction):
         self.player.shop_complete = True
         self.player.last_active   = datetime.utcnow()
+
+        # Calculate and award shop XP
+        xp_earned = calculate_shop_xp(
+            self.cumulative_score,
+            self.customers_served,
+            self.huge_profit_count,
+        )
+        levelled_up, new_level = apply_xp_and_check_levelup(self.player, xp_earned)
         self.session.commit()
 
+        # Build closing embed
+        next_threshold = SHOP_LEVEL_THRESHOLDS.get(self.player.shop_level, 999)
         embed = discord.Embed(
             title="The Magic Closet - Closed for the Day",
             description="The last customer has left. You flip the sign to closed.",
             color=0xe74c3c,
         )
-        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin", inline=False)
-        embed.add_field(name="Current Balance",    value=f"{self.player.coin} coin",        inline=False)
+        embed.add_field(name="Total Earned Today", value=f"{self.total_coin_earned} coin",  inline=True)
+        embed.add_field(name="Current Balance",    value=f"{self.player.coin} coin",         inline=True)
+        embed.add_field(
+            name="Shop XP",
+            value=f"+{xp_earned} XP  |  {self.player.xp} / {next_threshold} XP  (Level {self.player.shop_level})",
+            inline=False,
+        )
+
+        if levelled_up:
+            embed.add_field(
+                name="LEVEL UP!",
+                value=f"Your Magic Closet has reached **Level {new_level}**! A skill point awaits.",
+                inline=False,
+            )
+
         embed.set_footer(text="Head into the dungeon with /dungeonprep")
         self.clear_items()
         await interaction.response.edit_message(embed=embed, view=self)
