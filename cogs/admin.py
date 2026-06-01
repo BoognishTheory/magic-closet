@@ -12,6 +12,21 @@ class AdminCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    @app_commands.command(name="debugsetupserver", description="[ADMIN] Manually run server setup — fixes category permissions.")
+    async def debugsetupserver(self, interaction: discord.Interaction):
+        from game.server_setup import setup_server
+        await interaction.response.defer(ephemeral=True)
+        try:
+            result = await setup_server(interaction.guild, interaction.client.user)
+            await interaction.followup.send(
+                f"Server setup complete.\n"
+                f"Category: {result['category'].name}\n"
+                f"Already existed: {result['already_existed']}",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"Setup failed: {e}", ephemeral=True)
+        
     @app_commands.command(name="debugfullreset", description="[ADMIN] Full wipe - clears cycle and all flags.")
     async def debugfullreset(self, interaction: discord.Interaction):
         session = get_session()
