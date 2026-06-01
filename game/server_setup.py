@@ -103,7 +103,7 @@ async def setup_server(guild: discord.Guild, bot_user: discord.ClientUser) -> di
         bot_user: discord.PermissionOverwrite(
             view_channel=True,
             manage_channels=True,
-            manage_permissions=True,
+            manage_roles=True,
             send_messages=True,
             read_message_history=True,
         ),
