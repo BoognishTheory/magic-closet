@@ -149,7 +149,7 @@ class NodeView(discord.ui.View):
         return embed
 
     async def _handle_choice(self, interaction: discord.Interaction, choice: str):
-        outcome = resolve_node(self.run, self.node, choice)
+        outcome = resolve_node(self.run, self.node, choice, self.player)
 
         if outcome["strike"]:
             self.run.strikes += 1
@@ -224,6 +224,13 @@ class NodeView(discord.ui.View):
             result_embed.add_field(
                 name="Shop XP",
                 value=f"+{node_xp} XP  |  {self.player.xp} / {next_threshold} (Lv {self.player.shop_level})",
+                inline=True
+            )
+        if outcome.get("stat_boosted") and outcome.get("stat_name"):
+            stat_val = getattr(self.player, outcome["stat_name"], None) or 1
+            result_embed.add_field(
+                name="Stat Bonus",
+                value=f"{outcome['stat_name'].capitalize()} {stat_val}/10 contributed to this outcome.",
                 inline=True
             )
         if win_type:
