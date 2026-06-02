@@ -282,5 +282,52 @@ class AdminCog(commands.Cog):
             session.close()
 
 
+    async def _debug_char_levelup(self, interaction: discord.Interaction):
+        """Forces an immediate character level-up for testing."""
+        from game.char_level import apply_char_win, post_char_levelup_message, WIN_COMBAT
+        from config import CHAR_LEVEL_THRESHOLDS
+
+        session = get_session()
+        try:
+            player = session.query(Player).filter_by(
+                discord_id=str(interaction.user.id)
+            ).first()
+            if not player:
+                await interaction.response.send_message("No player record found.", ephemeral=True)
+                return
+
+            current_level = player.char_level or 1
+            threshold     = CHAR_LEVEL_THRESHOLDS.get(current_level, 999)
+
+            # Set char_xp to threshold to trigger level-up on next win
+            player.char_xp = threshold
+            levelled_up, new_level = apply_char_win(player, WIN_COMBAT)
+
+            if not levelled_up:
+                # Manual trigger if apply_char_win didn't fire
+                player.char_xp   -= threshold
+                player.char_level = current_level + 1
+                new_level         = player.char_level
+                levelled_up       = True
+
+            session.commit()
+
+            await post_char_levelup_message(
+                interaction.guild,
+                player.shop_name,
+                interaction.user.display_name,
+                new_level,
+                player,
+            )
+
+            await interaction.response.send_message(
+                f"Character level-up forced. **Level {current_level} -> {new_level}**. "
+                f"Message posted to your channel.",
+                ephemeral=True,
+            )
+        finally:
+            session.close()
+
+
 async def setup(bot):
     await bot.add_cog(AdminCog(bot))

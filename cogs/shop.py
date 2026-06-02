@@ -14,6 +14,7 @@ from db.models import Player, BankItem, SkillPoints
 from game.access import has_access, deny_access
 from game.cycle_manager import can_shop
 from game.level_up import apply_xp_and_check_levelup, post_levelup_message
+from game.char_level import apply_char_win, post_char_levelup_message, WIN_SOCIAL
 from cogs.startshop import check_shop_channel
 from config import SHOP_XP_MAX, HUGE_PROFIT_BONUS, HUGE_PROFIT_BONUS_CAP, SHOP_LEVEL_THRESHOLDS
 from datetime import datetime
@@ -197,6 +198,7 @@ class ShopView(discord.ui.View):
         self.cumulative_score  = 0
         self.customers_served  = 0
         self.huge_profit_count = 0
+        self.social_wins_earned = 0   # incremented per sale at Small Profit or better
         self._set_stage_buttons()
 
     def _set_stage_buttons(self):
@@ -259,6 +261,9 @@ class ShopView(discord.ui.View):
         self.customers_served  += 1
         if tier_label == "Huge Profit":
             self.huge_profit_count += 1
+        # Social win if Small Profit or better (score >= 7)
+        if self.stage_score >= 7:
+            self.social_wins_earned += 1
 
         self.player.coin       += coin_earned
         self.total_coin_earned += coin_earned
@@ -320,6 +325,19 @@ class ShopView(discord.ui.View):
                 new_level,
                 sp,
             )
+
+        # Award social wins for qualifying sales and check char level-up
+        for _ in range(self.social_wins_earned):
+            char_levelled, char_new_lvl = apply_char_win(self.player, WIN_SOCIAL)
+            self.session.commit()
+            if char_levelled:
+                await post_char_levelup_message(
+                    interaction.guild,
+                    self.player.shop_name,
+                    interaction.user.display_name,
+                    char_new_lvl,
+                    self.player,
+                )
 
         next_threshold = SHOP_LEVEL_THRESHOLDS.get(self.player.shop_level, 999)
         embed = discord.Embed(

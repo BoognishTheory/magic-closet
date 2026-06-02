@@ -27,12 +27,17 @@ class Player(Base):
     last_active             = Column(DateTime, nullable=True)
     created_at              = Column(DateTime, default=datetime.utcnow)
     debt                    = Column(Boolean, default=False)
+    # Character progression
+    char_level              = Column(Integer, default=1)
+    char_xp                 = Column(Integer, default=0)
+    combat_wins             = Column(Integer, default=0)
+    social_wins             = Column(Integer, default=0)
 
     skill_points = relationship("SkillPoints", back_populates="player", uselist=False)
-    bank_items   = relationship("BankItem", back_populates="player")
-    active_run   = relationship("ActiveRun", back_populates="player", uselist=False)
-    quests       = relationship("Quest", back_populates="player")
-    run_history  = relationship("RunHistory", back_populates="player")
+    bank_items   = relationship("BankItem",    back_populates="player")
+    active_run   = relationship("ActiveRun",   back_populates="player", uselist=False)
+    quests       = relationship("Quest",       back_populates="player")
+    run_history  = relationship("RunHistory",  back_populates="player")
 
 
 class SkillPoints(Base):
@@ -40,10 +45,10 @@ class SkillPoints(Base):
 
     id              = Column(Integer, primary_key=True)
     player_id       = Column(Integer, ForeignKey("players.id"), nullable=False)
-    unspent_points  = Column(Integer, default=0)   # awarded on shop level-up
-    keen_eye        = Column(Integer, default=0)   # rank 0-8 (VS max rank 4)
-    smooth_talker   = Column(Integer, default=0)   # rank 0-8 (VS max rank 4)
-    heavy_hauler    = Column(Integer, default=0)   # rank 0-8 (VS max rank 4)
+    unspent_points  = Column(Integer, default=0)
+    keen_eye        = Column(Integer, default=0)
+    smooth_talker   = Column(Integer, default=0)
+    heavy_hauler    = Column(Integer, default=0)
 
     player = relationship("Player", back_populates="skill_points")
 
