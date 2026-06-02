@@ -1,16 +1,6 @@
 """
 game/char_level.py
 Character level-up logic. Parallel to game/level_up.py (shop level).
-
-apply_char_win()         — increments combat_wins or social_wins, awards
-                           char_xp, checks threshold, fires level-up.
-post_char_levelup_msg()  — posts character level-up embed to TMC channel.
-
-Character level-up is distinct from shop level-up:
-  - Driven by wins (combat or social), not XP points
-  - Awards 1 free stat point (wired in Character Level Up section)
-  - Different embed tone — personal growth, not franchise milestone
-  - Stat block shown with starting defaults until stat columns built
 """
 
 import discord
@@ -19,12 +9,7 @@ from config import CHAR_LEVEL_THRESHOLDS, CHAR_LEVEL_CAP, STARTING_STATS
 from game.startshop_utils import channel_name_from_store
 
 
-# ---------------------------------------------------------------------------
-# Bizard character level quips — personal growth tone
-# [PLACEHOLDER — workshop with team for final flavor text]
-# ---------------------------------------------------------------------------
-
-CHAR_LEVEL_QUIPS = [
+BIZARD_QUIPS = [
     "Bizard squints at you. 'You look different. Taller, maybe. Or just more dangerous.'",
     "The dungeon remembers you now. That's either very good or very bad.",
     "Bizard flips through a worn ledger. 'Ah yes. You've earned this one.'",
@@ -35,95 +20,80 @@ CHAR_LEVEL_QUIPS = [
     "'Growth,' Bizard announces to no one in particular. 'Happening. Right now. In this shop.'",
 ]
 
-
-# ---------------------------------------------------------------------------
-# Win types
-# ---------------------------------------------------------------------------
-
 WIN_COMBAT = "combat"
 WIN_SOCIAL = "social"
 
+STAT_MAX   = 10
+VALID_STATS = ["vitality", "brawn", "charm", "arcana", "fortune"]
 
-# ---------------------------------------------------------------------------
-# Core character win logic
-# ---------------------------------------------------------------------------
 
 def apply_char_win(player, win_type: str) -> tuple[bool, int]:
     """
-    Records a combat or social win, awards 1 char_xp, checks level threshold.
+    Records a win, awards 1 char_xp, checks threshold, fires level-up.
+    Awards 1 stat_points_unspent on level-up.
     Returns (levelled_up: bool, new_char_level: int).
-    Does NOT commit — caller commits.
-
-    win_type: WIN_COMBAT or WIN_SOCIAL
+    Does NOT commit.
     """
     current_level = player.char_level or 1
 
-    # Cap check — no progression beyond level 42
     if current_level >= CHAR_LEVEL_CAP:
         return False, current_level
 
-    # Increment win counter
     if win_type == WIN_COMBAT:
         player.combat_wins = (player.combat_wins or 0) + 1
     elif win_type == WIN_SOCIAL:
         player.social_wins = (player.social_wins or 0) + 1
 
-    # Award 1 char_xp per win
     player.char_xp = (player.char_xp or 0) + 1
-
-    # Check threshold
     threshold = CHAR_LEVEL_THRESHOLDS.get(current_level, 999)
+
     if player.char_xp >= threshold:
-        player.char_xp -= threshold
-        player.char_level = current_level + 1
+        player.char_xp         -= threshold
+        player.char_level       = current_level + 1
+        # Award 1 stat point on character level-up
+        player.stat_points_unspent = (player.stat_points_unspent or 0) + 1
         return True, player.char_level
 
     return False, current_level
 
-
-# ---------------------------------------------------------------------------
-# Character level-up embed
-# ---------------------------------------------------------------------------
 
 def build_char_levelup_embed(
     player_name: str,
     new_level: int,
     player,
 ) -> discord.Embed:
-    """
-    Personal growth embed — distinct tone from shop level-up scroll.
-    Shows new char level, stat block with current or default values.
-    """
-    quip = random.choice(CHAR_LEVEL_QUIPS)
+    quip    = random.choice(BIZARD_QUIPS)
+    unspent = player.stat_points_unspent or 1
 
     embed = discord.Embed(
         title=f"Character Level {new_level}",
         description=(
             f"*{quip}*\n\n"
             f"**{player_name}** has reached **Character Level {new_level}**.\n\n"
-            f"A free stat point has been awarded.\n"
-            f"Use `/spendstat [stat]` to invest it."
+            f"You have been awarded **1 stat point**. "
+            f"You now have **{unspent} unspent stat point{'s' if unspent != 1 else ''}**.\n\n"
+            f"Use `/spendstat [stat]` to invest it.\n"
+            f"Use `/status` to see your current stat block."
         ),
         color=0x3498db,
     )
 
-    # Stat block — use DB values if columns exist, fall back to starting defaults
-    vit  = getattr(player, "vitality", None) or STARTING_STATS["vitality"]
-    brwn = getattr(player, "brawn",    None) or STARTING_STATS["brawn"]
-    chrm = getattr(player, "charm",    None) or STARTING_STATS["charm"]
-    arc  = getattr(player, "arcana",   None) or STARTING_STATS["arcana"]
-    frt  = getattr(player, "fortune",  None) or STARTING_STATS["fortune"]
+    # Live stat block from DB — falls back to starting defaults
+    vit  = player.vitality or STARTING_STATS["vitality"]
+    brwn = player.brawn    or STARTING_STATS["brawn"]
+    chrm = player.charm    or STARTING_STATS["charm"]
+    arc  = player.arcana   or STARTING_STATS["arcana"]
+    frt  = player.fortune  or STARTING_STATS["fortune"]
 
     embed.add_field(
         name="Current Stats",
         value=(
-            f"Vitality: {vit}  |  Brawn: {brwn}  |  Charm: {chrm}\n"
-            f"Arcana: {arc}  |  Fortune: {frt}"
+            f"Vitality: {vit}/10  |  Brawn: {brwn}/10  |  Charm: {chrm}/10\n"
+            f"Arcana: {arc}/10  |  Fortune: {frt}/10"
         ),
         inline=False,
     )
 
-    # Win totals
     combat = player.combat_wins or 0
     social = player.social_wins or 0
     embed.add_field(
@@ -136,10 +106,6 @@ def build_char_levelup_embed(
     return embed
 
 
-# ---------------------------------------------------------------------------
-# Post character level-up message to TMC channel
-# ---------------------------------------------------------------------------
-
 async def post_char_levelup_message(
     guild: discord.Guild,
     shop_name: str,
@@ -147,16 +113,11 @@ async def post_char_levelup_message(
     new_level: int,
     player,
 ) -> None:
-    """
-    Posts character level-up embed to player's TMC channel.
-    Checks and repairs bot permissions. Fails silently.
-    """
     if not shop_name:
         return
 
     channel_name = channel_name_from_store(shop_name)
     channel = discord.utils.get(guild.text_channels, name=channel_name)
-
     if not channel:
         return
 

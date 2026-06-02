@@ -32,6 +32,13 @@ class Player(Base):
     char_xp                 = Column(Integer, default=0)
     combat_wins             = Column(Integer, default=0)
     social_wins             = Column(Integer, default=0)
+    # Stat block — default values set by STARTING_STATS in config.py
+    stat_points_unspent     = Column(Integer, default=0)
+    vitality                = Column(Integer, default=3)
+    brawn                   = Column(Integer, default=3)
+    charm                   = Column(Integer, default=2)
+    arcana                  = Column(Integer, default=3)
+    fortune                 = Column(Integer, default=3)
 
     skill_points = relationship("SkillPoints", back_populates="player", uselist=False)
     bank_items   = relationship("BankItem",    back_populates="player")

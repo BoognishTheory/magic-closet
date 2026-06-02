@@ -29,6 +29,13 @@ def run_migrations(engine):
         "ALTER TABLE players ADD COLUMN char_xp INTEGER DEFAULT 0",
         "ALTER TABLE players ADD COLUMN combat_wins INTEGER DEFAULT 0",
         "ALTER TABLE players ADD COLUMN social_wins INTEGER DEFAULT 0",
+        # Stat block — Character Level Up
+        "ALTER TABLE players ADD COLUMN stat_points_unspent INTEGER DEFAULT 0",
+        "ALTER TABLE players ADD COLUMN vitality INTEGER DEFAULT 3",
+        "ALTER TABLE players ADD COLUMN brawn INTEGER DEFAULT 3",
+        "ALTER TABLE players ADD COLUMN charm INTEGER DEFAULT 2",
+        "ALTER TABLE players ADD COLUMN arcana INTEGER DEFAULT 3",
+        "ALTER TABLE players ADD COLUMN fortune INTEGER DEFAULT 3",
     ]
     with engine.connect() as conn:
         for sql in migrations:

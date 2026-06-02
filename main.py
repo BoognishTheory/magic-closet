@@ -26,6 +26,8 @@ EXTENSIONS = [
     "cogs.inventory",
     "cogs.startshop",
     "cogs.skillpoints",
+    "cogs.status",
+    "cogs.spendstat",
 ]
 
 
