@@ -1,15 +1,24 @@
 """
 game/run_manager.py
 Core dungeon node resolution engine. No Discord imports.
-Takes a run + node + choice + player, rolls outcome, returns result dict.
 
-Stats affect encounter outcomes:
-  Brawn   — combat encounter success rolls (+2.5% per point)
-  Charm   — social encounter success rolls (+2.5% per point)
-  Arcana  — spell attack rolls: 1d6 + floor(Arcana x 0.5) vs monster Agility
-  Fortune — defense rolls against monster attacks (+2.5% per point)
+Three paths for combat nodes:
+  FIGHT — multi-round (5 round cap). Player and enemy exchange attacks.
+           Player HP drains on enemy hit. Enemy HP drains on player hit.
+           Enemy retreats with bad excuse at round cap.
+           Player death = run over, portal rescue, random loot dropped.
 
-Fresh DB read of player stats at resolution time — never cached stale values.
+  TALK  — compressed social path (3 stages, -1 disposition start).
+           Charm modifier applies. Enemy-specific outcomes.
+           High success = item reward. Low success = enemy stands down.
+           Failure = transitions to Fight, player auto-attacked first.
+
+  FLEE  — opposed agility check. Player d20 + Fortune vs enemy d20 + Agility.
+           Player wins ties.
+           Success = clean escape, all loot kept.
+           Failure = enemy hits once (HP damage), player escapes anyway.
+
+Non-combat nodes (social, environmental, puzzle, etc.) use single-roll resolution.
 """
 
 import random
@@ -36,49 +45,58 @@ with open("data/dungeons.json", "r") as f:
     DUNGEONS_DATA = json.load(f)["dungeons"]
 DUNGEONS_BY_ID = {d["id"]: d for d in DUNGEONS_DATA}
 
+with open("data/enemies.json", "r") as f:
+    ENEMIES_DATA = json.load(f)["enemies"]
+ENEMIES_BY_ID = {e["id"]: e for e in ENEMIES_DATA}
+
 with open("data/node_templates.json", "r") as f:
     NODES_DATA = json.load(f)["nodes"]
 NODES_BY_ID = {n["id"]: n for n in NODES_DATA}
 
-MAX_STRIKES        = 3
-BASE_SUCCESS_CHANCE = 65
-SUCCESS_CHANCE_CAP  = 90
-STAT_BONUS_PER_POINT = 2.5   # % per stat point — calibrate during playtesting
+MAX_STRIKES         = 3
+BASE_SUCCESS_CHANCE  = 65
+SUCCESS_CHANCE_CAP   = 90
+STAT_BONUS_PER_POINT = 2.5
+COMBAT_ROUND_CAP     = 5
 
-# Node types that use each stat
+# Talk path constants
+TALK_STAGES          = 3          # Compressed vs 7 in shop
+TALK_DISPOSITION_START = -1       # Combat context penalty
+TALK_MAX_SCORE       = TALK_STAGES * 2   # 6 total
+TALK_HIGH_THRESHOLD  = 5          # High success — enemy yields item
+TALK_LOW_THRESHOLD   = 3          # Low success — enemy stands down
+
 COMBAT_NODE_TYPES  = {"combat"}
 SOCIAL_NODE_TYPES  = {"social", "npc_encounter"}
 SPELL_NODE_TYPES   = {"supernatural"}
 
 
 # ---------------------------------------------------------------------------
-# Stat helpers — read from player object, fall back to starting defaults
+# Stat helpers
 # ---------------------------------------------------------------------------
 
 def get_stat(player, stat: str) -> int:
-    """Safe stat read — falls back to STARTING_STATS if column not yet populated."""
     if player is None:
         return STARTING_STATS.get(stat, 1)
     return getattr(player, stat, None) or STARTING_STATS.get(stat, 1)
 
 
 def stat_bonus_pct(stat_value: int) -> int:
-    """Convert a stat value to a percentage bonus. floor(stat x 2.5)"""
     return math.floor(stat_value * STAT_BONUS_PER_POINT)
 
 
+def calc_hp(vitality: int) -> int:
+    """HP formula used by both player and enemy."""
+    return 3 + math.floor(vitality * 0.75)
+
+
 # ---------------------------------------------------------------------------
-# Loadout bonus — weapon/spell modifier from equipped items
+# Loadout bonus
 # ---------------------------------------------------------------------------
 
 def get_loadout_bonus(run, choice: str) -> int:
-    """
-    Returns bonus from equipped weapon or spell based on choice type.
-    Fight → weapon damage_bonus
-    Flee  → spell escape_bonus
-    """
     choice_lower = choice.lower()
-    if "fight" in choice_lower or choice_lower == "a":
+    if "fight" in choice_lower:
         weapon = WEAPONS_BY_ID.get(run.weapon_slot or "")
         return weapon.get("damage_bonus", 0) if weapon else 0
     elif "flee" in choice_lower:
@@ -88,58 +106,239 @@ def get_loadout_bonus(run, choice: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Spell attack roll — Arcana-powered
+# Combat resolution — multi-round Fight path
 # ---------------------------------------------------------------------------
 
-def roll_spell_attack(player) -> dict:
+def resolve_fight_round(player_hp: int, enemy_hp: int, player, enemy: dict) -> dict:
     """
-    Spell attack: 1d6 + floor(Arcana x 0.5) vs monster Agility (fixed at 4).
-    Returns dict with roll, bonus, total, hit, and flavor.
+    Resolve one round of combat.
+    Player attacks first.
+    Returns updated HP values, hit results, and flavor lines.
     """
-    arcana      = get_stat(player, "arcana")
-    roll        = random.randint(1, 6)
-    bonus       = math.floor(arcana * 0.5)
-    total       = roll + bonus
-    monster_agi = 4   # baseline — scales with enemy tier in future
-    hit         = total >= monster_agi
+    brawn   = get_stat(player, "brawn")
+    fortune = get_stat(player, "fortune")
 
-    stat_boosted = arcana > STARTING_STATS["arcana"]
-    if hit and stat_boosted:
-        flavor = f"Your arcane focus sharpens the spell. It strikes true. ({roll} + {bonus} = {total})"
-    elif hit:
-        flavor = f"The spell connects. ({roll} + {bonus} = {total})"
+    # Player attacks enemy
+    player_roll    = random.randint(1, 20)
+    player_bonus   = math.floor(brawn * 0.5)
+    player_total   = player_roll + player_bonus
+    enemy_defense  = enemy.get("agility", 3)
+    player_hit     = player_total >= enemy_defense
+
+    if player_hit:
+        damage_to_enemy = max(1, math.floor(brawn * 0.75))
+        enemy_hp       -= damage_to_enemy
+        enemy_hp        = max(0, enemy_hp)
+        player_attack_line = (
+            f"You strike. ({player_roll} + {player_bonus} = {player_total} "
+            f"vs defense {enemy_defense}) **-{damage_to_enemy} HP**"
+        )
     else:
-        flavor = f"The spell dissipates before it lands. ({roll} + {bonus} = {total} vs {monster_agi})"
+        player_attack_line = (
+            f"You miss. ({player_roll} + {player_bonus} = {player_total} "
+            f"vs defense {enemy_defense})"
+        )
 
-    return {"roll": roll, "bonus": bonus, "total": total, "hit": hit, "flavor": flavor}
+    # Enemy attacks player (only if still alive)
+    enemy_hit = False
+    damage_to_player = 0
+    enemy_attack_line = ""
+
+    if enemy_hp > 0:
+        enemy_roll    = random.randint(1, 20)
+        enemy_brawn   = enemy.get("brawn", 2)
+        enemy_bonus   = math.floor(enemy_brawn * 0.5)
+        enemy_total   = enemy_roll + enemy_bonus
+        player_defense = math.floor(fortune * 0.5) + 8   # base 8 + Fortune modifier
+        enemy_hit     = enemy_total >= player_defense
+
+        if enemy_hit:
+            damage_to_player = max(1, math.floor(enemy_brawn * 0.5))
+            player_hp       -= damage_to_player
+            player_hp        = max(0, player_hp)
+            enemy_attack_line = (
+                f"{enemy['name']} strikes back. ({enemy_roll} + {enemy_bonus} = {enemy_total} "
+                f"vs your defense {player_defense}) **-{damage_to_player} HP**"
+            )
+        else:
+            enemy_attack_line = (
+                f"{enemy['name']} swings and misses. ({enemy_roll} + {enemy_bonus} = {enemy_total} "
+                f"vs your defense {player_defense})"
+            )
+
+    return {
+        "player_hp":          player_hp,
+        "enemy_hp":           enemy_hp,
+        "player_hit":         player_hit,
+        "enemy_hit":          enemy_hit,
+        "damage_to_enemy":    damage_to_enemy if player_hit else 0,
+        "damage_to_player":   damage_to_player,
+        "player_attack_line": player_attack_line,
+        "enemy_attack_line":  enemy_attack_line,
+    }
+
+
+def start_combat(node: dict, player) -> dict:
+    """
+    Initialize combat state from node and player.
+    Returns initial combat state dict.
+    """
+    enemy_id  = node.get("enemy_id", "goblin")
+    enemy     = ENEMIES_BY_ID.get(enemy_id, ENEMIES_BY_ID.get("goblin"))
+    player_vit = get_stat(player, "vitality")
+    enemy_vit  = enemy.get("vitality", 2)
+
+    return {
+        "enemy":      enemy,
+        "enemy_id":   enemy_id,
+        "enemy_hp":   calc_hp(enemy_vit),
+        "enemy_max":  calc_hp(enemy_vit),
+        "player_hp":  calc_hp(player_vit),
+        "player_max": calc_hp(player_vit),
+        "round":      1,
+    }
 
 
 # ---------------------------------------------------------------------------
-# Core resolution
+# Talk path — compressed social resolution
+# ---------------------------------------------------------------------------
+
+TALK_STAGE_DEMEANORS = [
+    ["empathetic",   "direct",      "humorous"],   # Stage 1 — Opening
+    ["deferential",  "empathetic",  "direct"],      # Stage 2 — Middle
+    ["empathetic",   "humorous",    "deferential"], # Stage 3 — Close
+]
+
+TALK_STAGE_LABELS = [
+    "Opening",
+    "Negotiation",
+    "Close",
+]
+
+CHOICE_INDEX = {"a": 0, "b": 1, "c": 2}
+
+
+def get_talk_stage_description(stage: int, enemy: dict) -> str:
+    name = enemy.get("name", "It")
+    stages = [
+        f"**{name}** is still in combat stance. You want to talk your way out of this.\n\n"
+        f"**A) [Empathetic]** Acknowledge its territory and apologize for the intrusion\n"
+        f"**B) [Direct]** State plainly that fighting benefits neither of you\n"
+        f"**C) [Humorous]** Make a disarming comment to break the tension",
+
+        f"{name} hasn't attacked. It's listening — barely.\n\n"
+        f"**A) [Deferential]** Offer something — passage, information, respect\n"
+        f"**B) [Empathetic]** Show that you understand why it's guarding this space\n"
+        f"**C) [Direct]** Make your ask clearly and without embellishment",
+
+        f"This is the moment. {name} is weighing you up.\n\n"
+        f"**A) [Empathetic]** Give it an out — a reason to let you pass with dignity intact\n"
+        f"**B) [Humorous]** One last light touch to close on a good note\n"
+        f"**C) [Deferential]** Step back and let it make the call",
+    ]
+    return stages[stage]
+
+
+def score_talk_choice(stage: int, choice: str, enemy: dict) -> int:
+    """Score a talk choice against enemy's preferred demeanor."""
+    choice_idx   = CHOICE_INDEX.get(choice.lower(), 0)
+    demeanor     = TALK_STAGE_DEMEANORS[stage][choice_idx]
+    enemy_likes  = enemy.get("talk_demeanor", "direct")
+
+    if demeanor == enemy_likes:
+        return 2
+    elif demeanor in ["empathetic", "deferential"]:  # broadly non-threatening
+        return 1
+    else:
+        return 0
+
+
+def resolve_talk_outcome(total_score: int, disposition: int, enemy: dict) -> dict:
+    """
+    Resolve final Talk outcome based on cumulative score + starting disposition.
+    Returns outcome dict with success level, message, and optional item reward.
+    """
+    final_score = total_score + disposition   # disposition starts at -1
+
+    if final_score >= TALK_HIGH_THRESHOLD:
+        return {
+            "success":     True,
+            "high_success": True,
+            "message":     enemy.get("talk_success_max", "It yields."),
+            "item_reward": enemy.get("talk_item_reward"),
+        }
+    elif final_score >= TALK_LOW_THRESHOLD:
+        return {
+            "success":     True,
+            "high_success": False,
+            "message":     enemy.get("talk_success_min", "It stands aside."),
+            "item_reward": None,
+        }
+    else:
+        return {
+            "success":     False,
+            "high_success": False,
+            "message":     f"{enemy.get('name', 'It')} stops listening. This is about to get physical.",
+            "item_reward": None,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Flee path — opposed agility check
+# ---------------------------------------------------------------------------
+
+def resolve_flee(player, enemy: dict) -> dict:
+    """
+    Opposed agility check.
+    Player: d20 + Fortune modifier
+    Enemy:  d20 + Agility
+    Player wins ties.
+    """
+    fortune        = get_stat(player, "fortune")
+    player_roll    = random.randint(1, 20)
+    player_bonus   = math.floor(fortune * 0.5)
+    player_total   = player_roll + player_bonus
+
+    enemy_roll    = random.randint(1, 20)
+    enemy_agility = enemy.get("agility", 3)
+    enemy_total   = enemy_roll + enemy_agility
+
+    success = player_total >= enemy_total   # player wins ties
+
+    damage = 0
+    if not success:
+        enemy_brawn = enemy.get("brawn", 2)
+        damage      = max(1, math.floor(enemy_brawn * 0.5))
+
+    return {
+        "success":      success,
+        "player_total": player_total,
+        "player_roll":  player_roll,
+        "player_bonus": player_bonus,
+        "enemy_total":  enemy_total,
+        "enemy_roll":   enemy_roll,
+        "enemy_agility":enemy_agility,
+        "damage":       damage,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Non-combat node resolution (single roll)
 # ---------------------------------------------------------------------------
 
 def resolve_node(run, node: dict, choice: str, player=None) -> dict:
     """
-    Resolve a dungeon node. Returns outcome dict:
-      success: bool
-      strike:  bool
-      loot_item: str | None
-      message: str
-      stat_boosted: bool  — True if a stat meaningfully affected the outcome
-      xp_tranche: str | None
+    Resolve a non-combat dungeon node.
+    Combat nodes are handled by the combat view in explore.py.
+    Returns outcome dict.
     """
     node_type     = node.get("type", "").lower()
     loadout_bonus = get_loadout_bonus(run, choice)
 
-    # --- Determine stat modifier based on node type ---
     stat_modifier = 0
     stat_name     = None
 
-    if node_type in COMBAT_NODE_TYPES:
-        brawn         = get_stat(player, "brawn")
-        stat_modifier = stat_bonus_pct(brawn)
-        stat_name     = "brawn"
-    elif node_type in SOCIAL_NODE_TYPES:
+    if node_type in SOCIAL_NODE_TYPES:
         charm         = get_stat(player, "charm")
         stat_modifier = stat_bonus_pct(charm)
         stat_name     = "charm"
@@ -148,15 +347,9 @@ def resolve_node(run, node: dict, choice: str, player=None) -> dict:
         stat_modifier = stat_bonus_pct(arcana)
         stat_name     = "arcana"
 
-    # --- Roll ---
-    final_chance = min(
-        BASE_SUCCESS_CHANCE + (loadout_bonus * 5) + stat_modifier,
-        SUCCESS_CHANCE_CAP
-    )
-    roll    = random.randint(1, 100)
-    success = roll <= final_chance
-
-    # Did the stat make a meaningful difference?
+    final_chance    = min(BASE_SUCCESS_CHANCE + (loadout_bonus * 5) + stat_modifier, SUCCESS_CHANCE_CAP)
+    roll            = random.randint(1, 100)
+    success         = roll <= final_chance
     baseline_chance = min(BASE_SUCCESS_CHANCE + (loadout_bonus * 5), SUCCESS_CHANCE_CAP)
     stat_boosted    = (
         stat_modifier > 0
@@ -165,16 +358,9 @@ def resolve_node(run, node: dict, choice: str, player=None) -> dict:
         and roll <= final_chance
     )
 
-    # --- Strike ---
-    strike = not success and node.get("failure_text") is not None
-
-    # --- Loot ---
-    loot_item = None
-    if success:
-        loot_item = _roll_loot(run.dungeon_id, node_type)
-
-    # --- Message ---
-    message = _build_message(node, success, choice, stat_boosted, stat_name, player)
+    strike    = not success and node.get("failure_text") is not None
+    loot_item = _roll_loot(run.dungeon_id, node_type) if success else None
+    message   = _build_message(node, success, choice, stat_boosted, stat_name, player)
 
     return {
         "success":      success,
@@ -191,35 +377,29 @@ def resolve_node(run, node: dict, choice: str, player=None) -> dict:
 # ---------------------------------------------------------------------------
 
 def _roll_loot(dungeon_id: str, node_type: str) -> str | None:
-    """
-    40% chance to drop loot on success.
-    Discovery nodes always drop. Other nodes 40%.
-    """
-    if node_type == "discovery":
-        drop_chance = 100
-    else:
-        drop_chance = 40
-
+    drop_chance = 100 if node_type == "discovery" else 40
     if random.randint(1, 100) > drop_chance:
         return None
 
-    dungeon   = DUNGEONS_BY_ID.get(dungeon_id, {})
-    tier      = dungeon.get("tier", 1)
-    tier_key  = f"tier{tier}"
-    pool      = LOOT_TABLES.get(tier_key, [])
-
+    dungeon  = DUNGEONS_BY_ID.get(dungeon_id, {})
+    tier     = dungeon.get("tier", 1)
+    pool     = LOOT_TABLES.get(f"tier{tier}", [])
     if not pool:
         return None
 
     weights = []
     for item_id in pool:
-        item = ITEMS_BY_ID.get(item_id, {})
-        rarity = item.get("rarity", "common")
-        w = {"common": 60, "uncommon": 25, "rare": 12, "epic": 3}.get(rarity, 10)
+        rarity = ITEMS_BY_ID.get(item_id, {}).get("rarity", "common")
+        w      = {"common": 60, "uncommon": 25, "rare": 12, "epic": 3}.get(rarity, 10)
         weights.append(w)
 
     chosen = random.choices(pool, weights=weights, k=1)
     return chosen[0] if chosen else None
+
+
+def roll_loot_public(dungeon_id: str, node_type: str) -> str | None:
+    """Public wrapper for loot rolling — used by explore.py combat resolution."""
+    return _roll_loot(dungeon_id, node_type)
 
 
 # ---------------------------------------------------------------------------
@@ -227,21 +407,16 @@ def _roll_loot(dungeon_id: str, node_type: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 def _build_message(node: dict, success: bool, choice: str, stat_boosted: bool, stat_name: str | None, player) -> str:
-    """
-    Build outcome message. Stat-boosted successes get alternate flavor line.
-    """
     if success:
         base_msg = node.get("success_text", "You succeed.")
-
         if stat_boosted and stat_name:
-            stat_val = get_stat(player, stat_name)
+            stat_val    = get_stat(player, stat_name)
             boost_lines = {
                 "brawn":  f"\n\n*Your strength carries you through. (Brawn {stat_val}/10)*",
                 "charm":  f"\n\n*Your natural charm wins them over. (Charm {stat_val}/10)*",
                 "arcana": f"\n\n*Your arcane attunement sharpens the outcome. (Arcana {stat_val}/10)*",
             }
             base_msg += boost_lines.get(stat_name, "")
-
         return base_msg
     else:
         return node.get("failure_text", "You fail.")
@@ -252,5 +427,4 @@ def _build_message(node: dict, success: bool, choice: str, stat_boosted: bool, s
 # ---------------------------------------------------------------------------
 
 def roll_death_save() -> bool:
-    """35% chance to survive at MAX_STRIKES."""
     return random.randint(1, 100) <= 35
