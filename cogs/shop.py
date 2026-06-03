@@ -13,7 +13,7 @@ from discord.ext import commands
 from db.database import get_session
 from db.models import Player, BankItem, SkillPoints
 from game.access import has_access, deny_access
-from game.cycle_manager import can_shop
+from game.cycle_manager import can_shop, is_chaos_stock
 from game.level_up import apply_xp_and_check_levelup, post_levelup_message
 from game.char_level import apply_char_win, post_char_levelup_message, WIN_SOCIAL
 from cogs.startshop import check_shop_channel
@@ -253,7 +253,7 @@ def get_stage_description(stage: int, item_def: dict, customer: dict) -> str:
 # ---------------------------------------------------------------------------
 
 class ShopView(discord.ui.View):
-    def __init__(self, session, player, shelf_items, customer_pool: list):
+    def __init__(self, session, player, shelf_items, customer_pool: list, chaos: bool = False):
         super().__init__(timeout=120)
         self.session              = session
         self.player               = player
@@ -270,6 +270,7 @@ class ShopView(discord.ui.View):
         self.social_wins_earned   = 0
         # Track Venter hard gate state
         self.venter_gate_broken   = False
+        self.chaos_stock          = chaos
         self._set_stage_buttons()
 
     def _set_stage_buttons(self):
@@ -320,6 +321,15 @@ class ShopView(discord.ui.View):
         embed.add_field(name="Item",     value=item_def.get("name", "Unknown"),    inline=True)
         embed.add_field(name="Customer", value=customer["name"],                    inline=True)
         embed.add_field(name="Stage",    value=f"{self.current_stage + 1} / 7",    inline=True)
+        chaos_line = (
+            "
+
+*Bizard overslept. The portal stocked whatever was closest to hand. "
+            "Keen Eye has no power here.*"
+            if self.chaos_stock else ""
+        )
+        if chaos_line and self.current_stage == 0:
+            embed.description = (embed.description or "") + chaos_line
         embed.set_footer(text="Choose your approach. [Brackets] show your demeanor.")
         return embed
 
@@ -540,6 +550,20 @@ class ShopCog(commands.Cog):
                 session.close()
                 return
 
+            # Chaos stock — player skipped prep, stock 4 random items
+            chaos = is_chaos_stock(player)
+            if chaos:
+                all_bank = session.query(BankItem).filter_by(
+                    player_id=player.id, on_floor=False
+                ).all()
+                if all_bank:
+                    import random as _random
+                    chosen = _random.sample(all_bank, min(4, len(all_bank)))
+                    for item in chosen:
+                        item.on_floor = True
+                    player.prep_complete = True
+                    session.commit()
+
             shelf = session.query(BankItem).filter_by(
                 player_id=player.id, on_floor=True
             ).all()
@@ -570,7 +594,7 @@ class ShopCog(commands.Cog):
                     session.close()
                     return
 
-            view  = ShopView(session, player, shelf, customer_pool)
+            view  = ShopView(session, player, shelf, customer_pool, chaos=chaos)
             embed = view.build_stage_embed()
             await interaction.response.send_message(embed=embed, view=view)
 
