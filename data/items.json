@@ -1,14 +1,45 @@
 {
   "items": [
-    {"id": "iron_sword", "name": "Iron Sword", "rarity": "common", "sell_value": 10, "type": "weapon"},
-    {"id": "leather_boots", "name": "Leather Boots", "rarity": "common", "sell_value": 8, "type": "armor"},
-    {"id": "health_potion", "name": "Health Potion", "rarity": "common", "sell_value": 12, "type": "consumable"},
-    {"id": "silver_dagger", "name": "Silver Dagger", "rarity": "uncommon", "sell_value": 25, "type": "weapon"},
-    {"id": "enchanted_cloak", "name": "Enchanted Cloak", "rarity": "uncommon", "sell_value": 30, "type": "armor"},
-    {"id": "mana_crystal", "name": "Mana Crystal", "rarity": "uncommon", "sell_value": 35, "type": "material"},
-    {"id": "golden_chalice", "name": "Golden Chalice", "rarity": "rare", "sell_value": 75, "type": "treasure"},
-    {"id": "dragons_tooth", "name": "Dragon's Tooth", "rarity": "rare", "sell_value": 90, "type": "material"},
-    {"id": "shadowweave_armor", "name": "Shadowweave Armor", "rarity": "epic", "sell_value": 200, "type": "armor"},
-    {"id": "arcane_staff", "name": "Arcane Staff", "rarity": "epic", "sell_value": 250, "type": "weapon"}
+    {"id": "instant_itching_powder",      "name": "Instant Itching Powder",            "category": "pranks",           "rarity": "common",   "sell_value": 8,  "description": "A small sachet of fine powder. Application is instantaneous. Results are immediate and deeply personal."},
+    {"id": "exploding_gift_wrap",          "name": "Exploding Gift Wrap",               "category": "pranks",           "rarity": "common",   "sell_value": 10, "description": "Looks like perfectly normal gift wrap. Gives a modest pop when opened. Recipient reaction varies."},
+    {"id": "embarrassing_sound_emitter",   "name": "Embarrassing Sound Emitter",        "category": "pranks",           "rarity": "uncommon", "sell_value": 18, "description": "A small disc that activates on proximity. The sound it makes is difficult to describe and impossible to explain."},
+    {"id": "misfortune_cookie",            "name": "Misfortune Cookie",                 "category": "pranks",           "rarity": "common",   "sell_value": 7,  "description": "Looks like a fortune cookie. The message inside is accurate, specific, and not what anyone needed to hear today."},
+    {"id": "reversing_ink",               "name": "Reversing Ink",                     "category": "pranks",           "rarity": "uncommon", "sell_value": 15, "description": "Write something. Wait 24 hours. Read it backwards. It will have changed. Not improved. Changed."},
+
+    {"id": "instant_ramen_actually_good", "name": "Instant Ramen (Actually Good)",     "category": "remedies",         "rarity": "common",   "sell_value": 9,  "description": "It tastes exactly like the ramen you had that one night that fixed everything. Every time."},
+    {"id": "one_time_knee_fix",           "name": "One-Time Knee Fix",                 "category": "remedies",         "rarity": "uncommon", "sell_value": 22, "description": "Works once. Works completely. Do not ask about the second knee."},
+    {"id": "forget_your_ex_soap",         "name": "Forget Your Ex Soap",               "category": "remedies",         "rarity": "uncommon", "sell_value": 20, "description": "A bar of soap. Lathers completely normally. What were you thinking about? Exactly."},
+    {"id": "five_more_minutes_pillow",    "name": "Five More Minutes Pillow",           "category": "remedies",         "rarity": "common",   "sell_value": 11, "description": "Grants exactly five more minutes of sleep. Resets alarm. Does not care about your meeting."},
+    {"id": "adequate_day_tonic",          "name": "Adequate Day Tonic",                "category": "remedies",         "rarity": "rare",     "sell_value": 35, "description": "Does not promise a good day. Promises an adequate one. For some people this is the miracle."},
+    {"id": "elixir_of_plausible_deniability", "name": "Elixir of Plausible Deniability", "category": "remedies",      "rarity": "epic",     "sell_value": 75, "description": "A single vial. Works exactly as described. You were never here. Neither was this."},
+
+    {"id": "enchanted_baking_flour",      "name": "Enchanted Baking Flour",            "category": "magical_supplies", "rarity": "common",   "sell_value": 8,  "description": "Bakes normally. What comes out is slightly better than you deserve. Every time."},
+    {"id": "ritual_candles_unscented",    "name": "Ritual Candles (Unscented)",         "category": "magical_supplies", "rarity": "common",   "sell_value": 7,  "description": "For rituals requiring candles. No scent. No questions. Twelve in a box."},
+    {"id": "charm_components_assorted",   "name": "Charm Components (Assorted)",        "category": "magical_supplies", "rarity": "uncommon", "sell_value": 16, "description": "A small pouch of miscellaneous charm components. Contents vary. Efficacy varies. Price does not."},
+    {"id": "single_use_luck_crystal",     "name": "Single-Use Luck Crystal",            "category": "magical_supplies", "rarity": "rare",     "sell_value": 40, "description": "Use it once. Something good will happen. It will not be the thing you used it for."},
+    {"id": "binding_thread_gold",         "name": "Binding Thread (Gold)",              "category": "magical_supplies", "rarity": "uncommon", "sell_value": 19, "description": "Binds things together. Magically. What things is entirely up to you and entirely your responsibility."},
+    {"id": "enchanted_ledger",            "name": "Enchanted Ledger",                   "category": "magical_supplies", "rarity": "epic",     "sell_value": 70, "description": "Records everything that happens near it. Accurately. Permanently. Cannot be erased. Cannot be sold to the wrong person fast enough."},
+    {"id": "loyalty_candle",              "name": "Loyalty Candle",                     "category": "magical_supplies", "rarity": "rare",     "sell_value": 36, "description": "Burns for exactly as long as the relationship it was lit for. This is sometimes 30 years. This is sometimes 40 minutes."},
+
+    {"id": "self_stirring_spoon",         "name": "Self-Stirring Spoon",                "category": "conveniences",     "rarity": "common",   "sell_value": 10, "description": "Stirs. Continuously. Has opinions about pace. Will not be rushed."},
+    {"id": "anti_gravity_gravy_boat",     "name": "Anti-Gravity Gravy Boat",            "category": "conveniences",     "rarity": "uncommon", "sell_value": 24, "description": "The gravy stays in the boat regardless of angle. This sounds small. It is not small."},
+    {"id": "always_right_clock",          "name": "Always-Right Clock (Bad News)",      "category": "conveniences",     "rarity": "uncommon", "sell_value": 18, "description": "Always shows the correct time. This is not always good news. Cannot be stopped. Cannot be covered."},
+    {"id": "self_filing_paperwork",       "name": "Self-Filing Paperwork",              "category": "conveniences",     "rarity": "rare",     "sell_value": 45, "description": "Files itself. Correctly. In the right place. The first time. Tax professionals have wept."},
+    {"id": "perpetually_warm_coffee_mug", "name": "Perpetually Warm Coffee Mug",        "category": "conveniences",     "rarity": "common",   "sell_value": 12, "description": "The coffee stays exactly the temperature you wanted it. Not hot. The temperature you wanted it."},
+
+    {"id": "broom_that_judges_you",       "name": "Broom That Judges You",              "category": "wonder_items",     "rarity": "uncommon", "sell_value": 25, "description": "Sweeps the floor. Pauses. Looks at you. Sweeps again. You know what it's thinking."},
+    {"id": "socks_that_argue_politics",   "name": "Socks That Argue Politics",          "category": "wonder_items",     "rarity": "uncommon", "sell_value": 20, "description": "Warm. Comfortable. Hold strong opinions on several local issues. Will not let it go at dinner."},
+    {"id": "key_to_your_insecurities",    "name": "Key to Your Insecurities",           "category": "wonder_items",     "rarity": "rare",     "sell_value": 50, "description": "A key. Opens one door. The door it opens is different for everyone. No refunds."},
+    {"id": "honest_feedback_mirror",      "name": "Mirror That Gives Honest Feedback",  "category": "wonder_items",     "rarity": "rare",     "sell_value": 42, "description": "Reflects accurately. Also provides one unsolicited observation per morning. It is always right. You will hate it."},
+    {"id": "plant_that_knows_too_much",   "name": "Plant That Knows Too Much",          "category": "wonder_items",     "rarity": "uncommon", "sell_value": 22, "description": "A small potted plant. Does not speak. Somehow you know it knows. It has been watching."},
+    {"id": "probably_harmless_orb",       "name": "Probably Harmless Orb",              "category": "wonder_items",     "rarity": "epic",     "sell_value": 80, "description": "Glows faintly. Warm to the touch. Bizard is 94% sure it is harmless. Will not specify what the 6% is."},
+    {"id": "compliment_mirror",           "name": "Compliment Mirror",                  "category": "wonder_items",     "rarity": "common",   "sell_value": 8,  "description": "Says something nice every morning. Lies completely. You will check it anyway."},
+
+    {"id": "strongly_worded_letter",      "name": "Strongly Worded Letter",             "category": "practical_magic",  "rarity": "common",   "sell_value": 9,  "description": "Pre-written. Surprisingly effective. The recipient does not know why they feel compelled to comply. Neither do you."},
+    {"id": "dungeon_adjacent_gear",       "name": "Dungeon-Adjacent Gear",              "category": "practical_magic",  "rarity": "common",   "sell_value": 11, "description": "Not a weapon. Not armor. Something adjacent to both that covers the gap. Surprisingly useful down there."},
+    {"id": "portable_door_alarm",         "name": "Portable Door Alarm",                "category": "practical_magic",  "rarity": "uncommon", "sell_value": 17, "description": "Attaches to any door. Activates when opened without permission. Definition of permission is yours to set."},
+    {"id": "emergency_rope",              "name": "Emergency Rope (Judicious Use Only)","category": "practical_magic",  "rarity": "uncommon", "sell_value": 16, "description": "A coil of rope. Works for climbing, binding, and three other uses Bizard would prefer not to specify."},
+    {"id": "silence_stone",              "name": "Silence Stone",                      "category": "practical_magic",  "rarity": "rare",     "sell_value": 38, "description": "Creates a small field of absolute silence when squeezed. Lasts 30 seconds. No exceptions. No carry-over."},
+    {"id": "accountability_journal",      "name": "Accountability Journal",             "category": "practical_magic",  "rarity": "rare",     "sell_value": 38, "description": "Writes in itself. Records your intentions each morning. Compares them to your actions each evening. Diplomatically."}
   ]
 }
