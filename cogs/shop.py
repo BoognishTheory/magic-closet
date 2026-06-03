@@ -322,9 +322,9 @@ class ShopView(discord.ui.View):
         embed.add_field(name="Customer", value=customer["name"],                    inline=True)
         embed.add_field(name="Stage",    value=f"{self.current_stage + 1} / 7",    inline=True)
         chaos_line = (
-            "
+            
 
-*Bizard overslept. The portal stocked whatever was closest to hand. "
+"*Bizard overslept. The portal stocked whatever was closest to hand. "
             "Keen Eye has no power here.*"
             if self.chaos_stock else ""
         )
