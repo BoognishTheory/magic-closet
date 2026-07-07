@@ -1,30 +1,57 @@
 {
   "dungeons": [
     {
-      "id": "goblin_caves",
-      "name": "Goblin Caves",
+      "id": "the_sewers",
+      "name": "The Sewers of [town_name]",
       "tier": 1,
-      "description": "A damp network of tunnels crawling with low-level threats.",
-      "enemy_pool": ["goblin", "skeleton"],
-      "node_count": 5,
-      "entry_cost": 5
+      "description": "A damp network of tunnels beneath the town. Smells exactly as expected. Then worse.",
+      "enemy_pool": ["goblin", "giant_rat", "skeleton", "sewer_goblin"],
+      "node_count": 8,
+      "entry_cost": 0
     },
     {
-      "id": "ruined_fort",
-      "name": "Ruined Fort",
+      "id": "the_spirited_wood",
+      "name": "The Spirited Wood",
+      "tier": 1,
+      "description": "Old growth that predates the town. The trees remember things. Some of them object to visitors.",
+      "enemy_pool": ["forest_wolf", "treant_sapling", "skeleton"],
+      "node_count": 8,
+      "entry_cost": 0
+    },
+    {
+      "id": "the_crystal_toad_cave",
+      "name": "The Crystal Toad Cave",
+      "tier": 1,
+      "description": "A cave system lit by mineral formations of unknown origin. The toads are a secondary concern.",
+      "enemy_pool": ["crystal_toad", "cave_bat_swarm", "skeleton"],
+      "node_count": 8,
+      "entry_cost": 0
+    },
+    {
+      "id": "the_silken_pit",
+      "name": "The Silken Pit",
+      "tier": 1,
+      "description": "A descent into silk-covered darkness. Something large lives at the bottom. Several things live above it.",
+      "enemy_pool": ["spider_guard", "skeleton", "cave_bat_swarm"],
+      "node_count": 8,
+      "entry_cost": 0
+    },
+    {
+      "id": "the_ruined_fort",
+      "name": "The Ruined Fort",
       "tier": 2,
-      "description": "A crumbling stronghold occupied by dangerous warriors.",
-      "enemy_pool": ["orc_warrior", "dark_mage"],
-      "node_count": 6,
+      "description": "A crumbling stronghold. Dangerous warriors have claimed it. They were not asked.",
+      "enemy_pool": ["orc_warrior", "dark_mage", "skeleton"],
+      "node_count": 9,
       "entry_cost": 15
     },
     {
-      "id": "dragon_sanctum",
-      "name": "Dragon Sanctum",
+      "id": "the_dragon_sanctum",
+      "name": "The Dragon Sanctum",
       "tier": 3,
-      "description": "An ancient lair. Few return with their lives — and fewer with their dignity.",
+      "description": "An ancient lair. Few return with their lives. Fewer with their dignity.",
       "enemy_pool": ["stone_golem", "dragon_whelp"],
-      "node_count": 7,
+      "node_count": 10,
       "entry_cost": 30
     }
   ]
